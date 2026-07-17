@@ -1,0 +1,109 @@
+{
+	"name": "@nanocollective/sentinel",
+	"version": "0.1.0",
+	"description": "An installable, Nanocoder-driven workflow that runs continuous, configurable security and code audits across a GitHub organisation's repositories and files findings as issues.",
+	"keywords": [
+		"security",
+		"audit",
+		"sast",
+		"github-actions",
+		"nanocoder",
+		"local-first",
+		"code-review",
+		"typescript"
+	],
+	"author": "Nano Collective",
+	"license": "MIT",
+	"repository": {
+		"type": "git",
+		"url": "https://github.com/Nano-Collective/sentinel.git"
+	},
+	"homepage": "https://github.com/Nano-Collective/sentinel#readme",
+	"bugs": {
+		"url": "https://github.com/Nano-Collective/sentinel/issues"
+	},
+	"type": "module",
+	"main": "dist/index.js",
+	"types": "dist/index.d.ts",
+	"bin": {
+		"sentinel": "dist/cli.js"
+	},
+	"packageManager": "pnpm@11.0.9",
+	"engines": {
+		"node": ">=22"
+	},
+	"files": [
+		"dist"
+	],
+	"scripts": {
+		"build": "tsc && tsc-alias && chmod +x dist/cli.js",
+		"dev": "tsc --watch",
+		"start": "node dist/cli.js",
+		"test:all": "./scripts/test.sh",
+		"test:ava": "ava",
+		"test:ava:coverage": "c8 ava",
+		"test:format": "biome check --no-errors-on-unmatched .",
+		"test:types": "tsc --noEmit",
+		"test:lint": "biome lint .",
+		"test:lint:fix": "biome check --write --unsafe .",
+		"test:knip": "knip",
+		"test:audit": "pnpm audit --audit-level=high --ignore-unfixable",
+		"test:security": "semgrep scan --config auto --error",
+		"format": "biome check --write .",
+		"format:check": "biome check .",
+		"prepare": "husky"
+	},
+	"devDependencies": {
+		"@biomejs/biome": "^2.5.0",
+		"@types/node": "^25.9.3",
+		"ava": "^7.0.0",
+		"c8": "^11.0.0",
+		"husky": "^9.1.7",
+		"knip": "^6.0.0",
+		"lint-staged": "^17.0.7",
+		"tsc-alias": "^1.8.16",
+		"tsx": "^4.20.6",
+		"typescript": "^5.0.3"
+	},
+	"lint-staged": {
+		"*.{js,ts,jsx,tsx,json,md}": [
+			"biome check --write --no-errors-on-unmatched"
+		]
+	},
+	"ava": {
+		"extensions": {
+			"ts": "module"
+		},
+		"nodeArguments": [
+			"--import=tsx",
+			"--no-warnings"
+		],
+		"files": [
+			"source/**/*.spec.ts",
+			"!source/**/*-helpers.ts",
+			"!source/**/test-helpers.ts"
+		],
+		"workerThreads": false,
+		"serial": true,
+		"environmentVariables": {
+			"NODE_ENV": "test"
+		}
+	},
+	"c8": {
+		"exclude": [
+			"source/cli.ts",
+			"source/index.ts",
+			"source/**/*.spec.ts"
+		],
+		"reporter": [
+			"text",
+			"json-summary",
+			"lcov"
+		],
+		"check-coverage": true,
+		"lines": 80,
+		"functions": 0,
+		"branches": 0,
+		"statements": 0
+	}
+}

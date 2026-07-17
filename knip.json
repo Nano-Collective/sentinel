@@ -1,0 +1,12 @@
+{
+	"$schema": "https://unpkg.com/knip@5/schema.json",
+	"entry": ["source/cli.ts", "source/index.ts"],
+	"project": ["source/**/*.ts"],
+	"ignore": [".github/**"],
+	"ignoreDependencies": ["tsc-alias", "husky", "lint-staged"],
+	"ignoreBinaries": ["semgrep"],
+	"ignoreExportsUsedInFile": {
+		"interface": true,
+		"type": true
+	}
+}
