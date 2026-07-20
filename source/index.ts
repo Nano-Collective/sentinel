@@ -36,6 +36,8 @@ export type {
 	ValidationResult,
 } from './findings/validate.js';
 export {validateFindings} from './findings/validate.js';
+export {buildAuditPrompt} from './prompt/build.js';
+export type {PromptInput, PromptResult, SourceFile} from './prompt/types.js';
 export type {DependencyResult} from './rule-packs/dependencies.js';
 export {resolveDependencies} from './rule-packs/dependencies.js';
 export {

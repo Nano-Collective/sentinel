@@ -55,8 +55,8 @@ function validateLineRange(
 	if (!isObject(value)) {
 		errors.push({
 			index,
-			field: 'lineRange',
-			message: 'lineRange must be an object with numeric start and end',
+			field: 'line_range',
+			message: 'line_range must be an object with numeric start and end',
 		});
 		return false;
 	}
@@ -65,8 +65,8 @@ function validateLineRange(
 	if (typeof start !== 'number' || typeof end !== 'number') {
 		errors.push({
 			index,
-			field: 'lineRange',
-			message: 'lineRange.start and lineRange.end must both be numbers',
+			field: 'line_range',
+			message: 'line_range.start and line_range.end must both be numbers',
 		});
 		return false;
 	}
@@ -74,8 +74,8 @@ function validateLineRange(
 	if (start < 1 || end < start) {
 		errors.push({
 			index,
-			field: 'lineRange',
-			message: 'lineRange must satisfy 1 <= start <= end',
+			field: 'line_range',
+			message: 'line_range must satisfy 1 <= start <= end',
 		});
 		return false;
 	}
@@ -117,7 +117,7 @@ function validateFinding(
 	}
 
 	// ...and a line range.
-	validateLineRange(value.lineRange, index, errors);
+	validateLineRange(value.line_range, index, errors);
 
 	if (!isNonEmptyString(value.category)) {
 		errors.push({
@@ -144,11 +144,11 @@ function validateFinding(
 		});
 	}
 
-	if (!isNonEmptyString(value.offendingSnippet)) {
+	if (!isNonEmptyString(value.offending_snippet)) {
 		errors.push({
 			index,
-			field: 'offendingSnippet',
-			message: 'offendingSnippet must be a non-empty string',
+			field: 'offending_snippet',
+			message: 'offending_snippet must be a non-empty string',
 		});
 	}
 
@@ -159,11 +159,11 @@ function validateFinding(
 	return {
 		rule: value.rule as string,
 		file: value.file as string,
-		lineRange: value.lineRange as LineRange,
+		lineRange: value.line_range as LineRange,
 		category: value.category as string,
 		severity: value.severity as Severity,
 		confidence: value.confidence as Confidence,
-		offendingSnippet: value.offendingSnippet as string,
+		offendingSnippet: value.offending_snippet as string,
 	};
 }
 

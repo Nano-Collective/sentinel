@@ -1,27 +1,35 @@
 import test from 'ava';
-import type {Finding} from './types.js';
 import {validateFindings} from './validate.js';
 
 console.log('\nfindings/validate.spec.ts');
 
-function validFinding(overrides: Partial<Finding> = {}): Finding {
+/** A well-formed finding in the snake_case wire shape the model emits. */
+function validFinding(
+	overrides: Record<string, unknown> = {},
+): Record<string, unknown> {
 	return {
 		rule: 'solana-anchor/missing-signer-check',
 		file: 'programs/vault/src/lib.rs',
-		lineRange: {start: 42, end: 48},
+		line_range: {start: 42, end: 48},
 		category: 'security',
 		severity: 'high',
 		confidence: 'medium',
-		offendingSnippet: 'pub fn withdraw(ctx: Context<Withdraw>) {',
+		offending_snippet: 'pub fn withdraw(ctx: Context<Withdraw>) {',
 		...overrides,
 	};
 }
 
-test('accepts a well-formed array of findings', t => {
+test('accepts a well-formed array and normalises to camelCase', t => {
 	const result = validateFindings([validFinding()]);
 	t.true(result.valid);
 	t.is(result.findings.length, 1);
 	t.deepEqual(result.errors, []);
+	// Wire snake_case is normalised to the camelCase Finding model.
+	t.deepEqual(result.findings[0]?.lineRange, {start: 42, end: 48});
+	t.is(
+		result.findings[0]?.offendingSnippet,
+		'pub fn withdraw(ctx: Context<Withdraw>) {',
+	);
 });
 
 test('accepts a JSON string and parses it', t => {
@@ -45,9 +53,7 @@ test('rejects a non-array top level', t => {
 });
 
 test('rejects a severity outside the allowed set', t => {
-	const result = validateFindings([
-		validFinding({severity: 'blocker' as never}),
-	]);
+	const result = validateFindings([validFinding({severity: 'blocker'})]);
 	t.false(result.valid);
 	t.true(result.errors.some(e => e.field === 'severity'));
 	t.is(result.findings.length, 0);
@@ -60,24 +66,22 @@ test('rejects a finding that cites no file', t => {
 });
 
 test('rejects a finding with a missing line range', t => {
-	const {lineRange, ...withoutRange} = validFinding();
+	const {line_range, ...withoutRange} = validFinding();
 	const result = validateFindings([withoutRange]);
 	t.false(result.valid);
-	t.true(result.errors.some(e => e.field === 'lineRange'));
+	t.true(result.errors.some(e => e.field === 'line_range'));
 });
 
 test('rejects an inverted line range', t => {
 	const result = validateFindings([
-		validFinding({lineRange: {start: 50, end: 10}}),
+		validFinding({line_range: {start: 50, end: 10}}),
 	]);
 	t.false(result.valid);
-	t.true(result.errors.some(e => e.field === 'lineRange'));
+	t.true(result.errors.some(e => e.field === 'line_range'));
 });
 
 test('rejects an invalid confidence value', t => {
-	const result = validateFindings([
-		validFinding({confidence: 'certain' as never}),
-	]);
+	const result = validateFindings([validFinding({confidence: 'certain'})]);
 	t.false(result.valid);
 	t.true(result.errors.some(e => e.field === 'confidence'));
 });
@@ -85,7 +89,7 @@ test('rejects an invalid confidence value', t => {
 test('reports errors for each field of a wholly malformed finding', t => {
 	const result = validateFindings([{}]);
 	t.false(result.valid);
-	// rule, file, lineRange, category, severity, confidence, offendingSnippet
+	// rule, file, line_range, category, severity, confidence, offending_snippet
 	t.true(result.errors.length >= 7);
 	t.is(result.findings.length, 0);
 });
