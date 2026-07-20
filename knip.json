@@ -4,7 +4,7 @@
 	"project": ["source/**/*.ts"],
 	"ignore": [".github/**"],
 	"ignoreDependencies": ["tsc-alias", "husky", "lint-staged"],
-	"ignoreBinaries": ["semgrep"],
+	"ignoreBinaries": ["semgrep", "nanocoder"],
 	"ignoreExportsUsedInFile": {
 		"interface": true,
 		"type": true

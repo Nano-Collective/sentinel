@@ -36,6 +36,19 @@ export type {
 	ValidationResult,
 } from './findings/validate.js';
 export {validateFindings} from './findings/validate.js';
+export {runAudit} from './orchestrator/audit.js';
+export {extractJsonArray} from './orchestrator/extract.js';
+export {
+	buildNanocoderArgs,
+	nanocoderRunner,
+	resolveModelId,
+} from './orchestrator/nanocoder-runner.js';
+export type {
+	AuditResult,
+	ModelRunner,
+	ModelRunResult,
+	RunnerOptions,
+} from './orchestrator/types.js';
 export {buildAuditPrompt} from './prompt/build.js';
 export type {PromptInput, PromptResult, SourceFile} from './prompt/types.js';
 export type {DependencyResult} from './rule-packs/dependencies.js';

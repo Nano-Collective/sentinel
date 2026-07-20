@@ -22,4 +22,4 @@ onlyBuiltDependencies:
   - '@biomejs/biome'
   - esbuild
 
-auditConfig: {}
+auditConfig: { ignoreGhsas: null }
