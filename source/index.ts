@@ -5,6 +5,20 @@
  * runtime (`sentinel run`), and a library. This module is the library surface.
  */
 
+export {parseConfig} from './config/parse.js';
+export {parseRepoOverride} from './config/repo-override.js';
+export type {
+	ConfigError,
+	ConfigResult,
+	IssuesConfig,
+	ModelConfig,
+	ModelFallback,
+	RepoOverride,
+	RepoOverrideResult,
+	SentinelConfig,
+	Suppression,
+	Target,
+} from './config/types.js';
 export type {
 	Confidence,
 	Finding,
