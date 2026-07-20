@@ -1,0 +1,14 @@
+# Exclude test files from security scanning (not production code)
+**/*.spec.ts
+
+# Exclude documentation
+docs/**
+
+# Exclude configuration and build files
+.husky/**
+dist/**
+coverage/**
+node_modules/**
+
+# Exclude TypeScript declaration files
+**/*.d.ts

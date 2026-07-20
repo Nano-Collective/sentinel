@@ -6,6 +6,12 @@ blockExoticSubdeps: true
 minimumReleaseAge: 10080
 trustPolicy: no-downgrade
 
+# Escape hatch for the release-age quarantine: transitive deps whose only
+# semver-matching version is newer than the window. Revisit as they age out.
+minimumReleaseAgeExclude:
+  - globby
+  - unbash
+
 # Only these dependencies are allowed to run install/build scripts. Nothing
 # runs a postinstall unless it is named here.
 allowBuilds:

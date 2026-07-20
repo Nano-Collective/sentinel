@@ -22,3 +22,18 @@ export type {
 	ValidationResult,
 } from './findings/validate.js';
 export {validateFindings} from './findings/validate.js';
+export type {DependencyResult} from './rule-packs/dependencies.js';
+export {resolveDependencies} from './rule-packs/dependencies.js';
+export {
+	globToRegExp,
+	matchesAppliesTo,
+	matchesGlob,
+} from './rule-packs/glob.js';
+export {parseRulePack, splitFrontmatter} from './rule-packs/parse.js';
+export type {
+	AppliesTo,
+	ParseResult,
+	RulePack,
+	RulePackError,
+	RulePackManifest,
+} from './rule-packs/types.js';

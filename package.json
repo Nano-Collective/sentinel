@@ -53,6 +53,9 @@
 		"format:check": "biome check .",
 		"prepare": "husky"
 	},
+	"dependencies": {
+		"yaml": "^2.8.3"
+	},
 	"devDependencies": {
 		"@biomejs/biome": "^2.5.0",
 		"@types/node": "^25.9.3",
