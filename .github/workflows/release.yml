@@ -1,0 +1,149 @@
+name: Release to NPM and GitHub
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+  packages: write
+
+jobs:
+  check-version:
+    runs-on: ubuntu-latest
+    outputs:
+      should-publish: ${{ steps.version-check.outputs.should-publish }}
+      package-version: ${{ steps.version-check.outputs.package-version }}
+      npm-version: ${{ steps.version-check.outputs.npm-version }}
+      is-prerelease: ${{ steps.version-check.outputs.is-prerelease }}
+      npm-tag: ${{ steps.version-check.outputs.npm-tag }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: "22"
+
+      - name: Check version difference
+        id: version-check
+        run: |
+          PACKAGE_VERSION=$(node -p "require('./package.json').version")
+          echo "package-version=$PACKAGE_VERSION" >> $GITHUB_OUTPUT
+
+          if [[ "$PACKAGE_VERSION" == *"-beta"* ]]; then
+            echo "is-prerelease=true" >> $GITHUB_OUTPUT
+            echo "npm-tag=beta" >> $GITHUB_OUTPUT
+          elif [[ "$PACKAGE_VERSION" == *"-alpha"* ]]; then
+            echo "is-prerelease=true" >> $GITHUB_OUTPUT
+            echo "npm-tag=alpha" >> $GITHUB_OUTPUT
+          elif [[ "$PACKAGE_VERSION" == *"-rc"* ]]; then
+            echo "is-prerelease=true" >> $GITHUB_OUTPUT
+            echo "npm-tag=rc" >> $GITHUB_OUTPUT
+          else
+            echo "is-prerelease=false" >> $GITHUB_OUTPUT
+            echo "npm-tag=latest" >> $GITHUB_OUTPUT
+          fi
+
+          NPM_VERSION=$(npm view @nanocollective/sentinel version 2>/dev/null || echo "0.0.0")
+          echo "npm-version=$NPM_VERSION" >> $GITHUB_OUTPUT
+
+          if [ "$PACKAGE_VERSION" != "$NPM_VERSION" ]; then
+            echo "✅ New version: $PACKAGE_VERSION (npm: $NPM_VERSION)"
+            echo "should-publish=true" >> $GITHUB_OUTPUT
+          else
+            echo "ℹ️ No version change: $PACKAGE_VERSION"
+            echo "should-publish=false" >> $GITHUB_OUTPUT
+          fi
+
+  publish:
+    needs: check-version
+    if: needs.check-version.outputs.should-publish == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@f40ffcd9367d9f12939873eb1018b921a783ffaa # v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: "22"
+          registry-url: "https://registry.npmjs.org"
+          cache: "pnpm"
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build project
+        run: pnpm build
+
+      - name: Run tests
+        run: pnpm test:all
+
+      - name: Verify build output
+        run: |
+          for f in dist/cli.js dist/index.js; do
+            if [ ! -f "$f" ]; then
+              echo "❌ Build failed: $f not found"
+              exit 1
+            fi
+          done
+          echo "✅ Build output present"
+
+      - name: Extract changelog
+        id: changelog
+        run: |
+          CHANGELOG=$(node scripts/extract-changelog.js 2>&1) && STATUS=0 || STATUS=$?
+          if [ "$STATUS" -eq 0 ]; then
+            echo "CHANGELOG<<EOF" >> $GITHUB_OUTPUT
+            echo "$CHANGELOG" >> $GITHUB_OUTPUT
+            echo "EOF" >> $GITHUB_OUTPUT
+          else
+            echo "CHANGELOG=No changelog available for this version." >> $GITHUB_OUTPUT
+          fi
+
+      - name: Publish to NPM
+        run: npm publish --access public --tag ${{ needs.check-version.outputs.npm-tag }}
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2
+        with:
+          tag_name: v${{ needs.check-version.outputs.package-version }}
+          name: Sentinel v${{ needs.check-version.outputs.package-version }}
+          prerelease: ${{ needs.check-version.outputs.is-prerelease == 'true' }}
+          body: |
+            ## What's Changed
+
+            ${{ steps.changelog.outputs.CHANGELOG }}
+
+            ### Install
+
+            ```bash
+            npx @nanocollective/sentinel@${{ needs.check-version.outputs.package-version }} init
+            ```
+
+            **Full Changelog**: https://github.com/Nano-Collective/sentinel/compare/v${{ needs.check-version.outputs.npm-version }}...v${{ needs.check-version.outputs.package-version }}
+
+  notify:
+    needs: [check-version, publish]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Notify result
+        run: |
+          if [ "${{ needs.check-version.outputs.should-publish }}" == "true" ]; then
+            if [ "${{ needs.publish.result }}" == "success" ]; then
+              echo "🎉 Published @nanocollective/sentinel v${{ needs.check-version.outputs.package-version }}"
+            else
+              echo "❌ Failed to publish v${{ needs.check-version.outputs.package-version }}"
+              exit 1
+            fi
+          else
+            echo "ℹ️ No new version to publish"
+          fi
