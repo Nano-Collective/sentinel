@@ -273,6 +273,9 @@ async function runRun(argv: string[]): Promise<number> {
 			configDir: resolve(flagStr(flags, 'config-dir') ?? dirname(configPath)),
 			configRepo:
 				flagStr(flags, 'config-repo') ?? process.env.GITHUB_REPOSITORY,
+			resolveAfterMisses: flagStr(flags, 'resolve-after-misses')
+				? Number(flagStr(flags, 'resolve-after-misses'))
+				: undefined,
 			dryRun,
 		},
 	);
