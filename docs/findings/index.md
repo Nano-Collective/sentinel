@@ -52,12 +52,13 @@ Every issue is labelled with your configured [label](../configuration/index.md#i
 
 ## Dedup
 
-Sentinel must never file the same issue twice. Dedup is enforced by a **content hash** over the finding's salient fields:
+Sentinel must never file the same issue twice. Dedup is enforced by a **content hash** over the fields that stay stable when a finding is re-audited:
 
-- the rule pack,
+- the rule (which encodes the rule pack and finding type),
 - the file,
-- the line range,
-- the finding type.
+- the category.
+
+The **line range is deliberately excluded** from the hash. LLMs report slightly different spans for the same issue between runs (e.g. lines 4–6 one day, 5–5 the next), so hashing it would break dedup and refile duplicates. The line range still appears in the issue body — it just isn't part of the finding's identity. The trade-off is that two distinct findings of the same rule in the same file collapse to a single issue, which is the cleaner outcome for a maintainer than several near-identical ones.
 
 A later run that produces the same finding **updates the existing issue's last-seen timestamp** instead of opening a duplicate. A finding that stops appearing across N consecutive runs is marked resolved automatically.
 

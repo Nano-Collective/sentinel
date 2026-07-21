@@ -23,20 +23,25 @@ test('is a stable 16-char hex string', t => {
 	t.is(findingHash(finding()), hash);
 });
 
-test('is identical for the same salient fields', t => {
-	// Severity/confidence/snippet are not salient: changing them keeps the hash.
+test('is identical for the same identity fields', t => {
+	// Severity/confidence/snippet are not identity; nor is the line range, which
+	// wobbles between LLM runs. Changing any of them keeps the hash stable.
 	t.is(
 		findingHash(finding()),
 		findingHash(
-			finding({severity: 'low', confidence: 'low', offendingSnippet: 'y'}),
+			finding({
+				severity: 'low',
+				confidence: 'low',
+				offendingSnippet: 'y',
+				lineRange: {start: 99, end: 120},
+			}),
 		),
 	);
 });
 
-test('changes when a salient field changes', t => {
+test('changes when an identity field changes', t => {
 	const base = findingHash(finding());
 	t.not(base, findingHash(finding({rule: 'p/other'})));
 	t.not(base, findingHash(finding({file: 'b.rs'})));
-	t.not(base, findingHash(finding({lineRange: {start: 2, end: 5}})));
 	t.not(base, findingHash(finding({category: 'performance'})));
 });
