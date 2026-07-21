@@ -37,6 +37,12 @@ export type {
 } from './findings/validate.js';
 export {validateFindings} from './findings/validate.js';
 export {runAudit} from './orchestrator/audit.js';
+export {
+	type AutoFixOptions,
+	type AutoFixResult,
+	buildAutoFixPrompt,
+	runAuditWithAutoFix,
+} from './orchestrator/auto-fix.js';
 export {extractJsonArray} from './orchestrator/extract.js';
 export {
 	buildNanocoderArgs,
