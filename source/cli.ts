@@ -11,7 +11,7 @@
  */
 
 import {readFileSync, writeFileSync} from 'node:fs';
-import {dirname, join} from 'node:path';
+import {dirname, join, resolve} from 'node:path';
 import {createInterface} from 'node:readline/promises';
 import {parseConfig} from './config/parse.js';
 import type {ModelConfig} from './config/types.js';
@@ -185,12 +185,14 @@ async function runRun(argv: string[]): Promise<number> {
 			provider: flagStr(flags, 'provider') ?? 'ollama',
 			model: flagStr(flags, 'model') ?? 'llama3.1:70b',
 		};
+		const localConfigDir = flagStr(flags, 'config-dir');
 		const outcome = await runLocal(
 			rulePack,
 			repo,
 			model,
 			{runner: nanocoderRunner, files: fsRepoFiles},
-			{configDir: flagStr(flags, 'config-dir')},
+			// Absolute — nanocoder runs with cwd set to the audited repo.
+			{configDir: localConfigDir ? resolve(localConfigDir) : undefined},
 		);
 		writeReport(renderReport(outcome), output);
 		return 0;
@@ -239,8 +241,9 @@ async function runRun(argv: string[]): Promise<number> {
 			workspaceDir: workspace,
 			packsDir:
 				flagStr(flags, 'packs-dir') ?? join(dirname(configPath), 'rule-packs'),
-			// nanocoder's agents.config.json lives beside sentinel.yaml.
-			configDir: flagStr(flags, 'config-dir') ?? dirname(configPath),
+			// nanocoder's agents.config.json lives beside sentinel.yaml. Absolute —
+			// nanocoder runs with cwd set to the audited repo.
+			configDir: resolve(flagStr(flags, 'config-dir') ?? dirname(configPath)),
 			configRepo:
 				flagStr(flags, 'config-repo') ?? process.env.GITHUB_REPOSITORY,
 			dryRun,
