@@ -5,3 +5,7 @@ coverage/
 .env
 .env.local
 .DS_Store
+
+# Local calibration throwaways
+demo-pack.md
+findings.md
