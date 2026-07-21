@@ -51,8 +51,94 @@ function topLevelArraySpans(text: string): string[] {
 }
 
 /**
+ * Recover complete objects from a truncated array-of-objects. Models
+ * occasionally cut off mid-array (max tokens), leaving `[{...},{...},{incomp`
+ * which parses as nothing. This finds the last `[` that opens an object array
+ * and keeps the leading complete `{...}` objects. Returns null if nothing
+ * recoverable. Only used as a fallback when a clean array was not found.
+ */
+function salvageTruncatedArray(output: string): string | null {
+	// Find the last top-level `[` immediately followed by `{` (an object array),
+	// tracking string state so brackets inside strings are ignored.
+	let inString = false;
+	let escaped = false;
+	let start = -1;
+	for (let i = 0; i < output.length; i++) {
+		const char = output[i];
+		if (inString) {
+			if (escaped) {
+				escaped = false;
+			} else if (char === '\\') {
+				escaped = true;
+			} else if (char === '"') {
+				inString = false;
+			}
+			continue;
+		}
+		if (char === '"') {
+			inString = true;
+		} else if (char === '[') {
+			const next = output.slice(i + 1).match(/^\s*\{/);
+			if (next) {
+				start = i;
+			}
+		}
+	}
+	if (start === -1) {
+		return null;
+	}
+
+	// Collect balanced top-level {...} objects from just after the `[`.
+	const objects: string[] = [];
+	let depth = 0;
+	let objectStart = -1;
+	inString = false;
+	escaped = false;
+	for (let i = start + 1; i < output.length; i++) {
+		const char = output[i];
+		if (inString) {
+			if (escaped) {
+				escaped = false;
+			} else if (char === '\\') {
+				escaped = true;
+			} else if (char === '"') {
+				inString = false;
+			}
+			continue;
+		}
+		if (char === '"') {
+			inString = true;
+		} else if (char === '{') {
+			if (depth === 0) {
+				objectStart = i;
+			}
+			depth++;
+		} else if (char === '}') {
+			depth--;
+			if (depth === 0 && objectStart !== -1) {
+				objects.push(output.slice(objectStart, i + 1));
+				objectStart = -1;
+			}
+		} else if (char === ']' && depth === 0) {
+			break;
+		}
+	}
+
+	if (objects.length === 0) {
+		return null;
+	}
+	const salvaged = `[${objects.join(',')}]`;
+	try {
+		return Array.isArray(JSON.parse(salvaged)) ? salvaged : null;
+	} catch {
+		return null;
+	}
+}
+
+/**
  * Return the last top-level JSON array in the output that parses to an array,
- * as a string, or null if there is none.
+ * as a string, or null if there is none. Falls back to salvaging a truncated
+ * array of objects.
  */
 export function extractJsonArray(output: string): string | null {
 	const spans = topLevelArraySpans(output);
@@ -66,5 +152,5 @@ export function extractJsonArray(output: string): string | null {
 			// Not valid JSON on its own; try the next candidate.
 		}
 	}
-	return null;
+	return salvageTruncatedArray(output);
 }

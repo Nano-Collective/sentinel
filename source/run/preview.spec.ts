@@ -87,11 +87,31 @@ test('renderPreview lists each group with counts', t => {
 		config(),
 		[],
 	);
-	const md = renderPreview([{repo: 'my-org/a', preview}]);
+	const md = renderPreview([{repo: 'my-org/a', preview, failedPacks: []}]);
 	t.true(md.includes('# Sentinel dry run'));
 	t.true(md.includes('No issues were filed.'));
 	t.true(md.includes('## my-org/a'));
 	t.true(md.includes('Would file as new** (1)'));
 	t.true(md.includes('Below severity threshold** (1)'));
 	t.true(md.includes('Dedup would have matched:** none'));
+});
+
+test('renderPreview surfaces failed packs instead of masking them as clean', t => {
+	const preview = previewReconciliation([], config(), []);
+	const md = renderPreview([
+		{
+			repo: 'my-org/a',
+			preview,
+			failedPacks: [{pack: 'p', reason: 'malformed output after 2 attempt(s)'}],
+		},
+	]);
+	t.true(md.includes('failed to audit'));
+	t.true(md.includes('`p`'));
+	t.true(md.includes('malformed output'));
+});
+
+test('renderPreview shows no failure block when all packs succeeded', t => {
+	const preview = previewReconciliation([], config(), []);
+	const md = renderPreview([{repo: 'my-org/a', preview, failedPacks: []}]);
+	t.false(md.includes('failed to audit'));
 });

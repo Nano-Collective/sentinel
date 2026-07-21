@@ -78,13 +78,37 @@ function group(title: string, findings: Finding[]): string {
 	].join('\n');
 }
 
+/** A pack whose audit did not produce valid findings this run. */
+export interface PackFailure {
+	pack: string;
+	reason: string;
+}
+
+/** One repo's dry-run preview, plus any packs that failed to audit. */
+export interface PreviewEntry {
+	repo: string;
+	preview: DryRunPreview;
+	failedPacks: PackFailure[];
+}
+
+function failureBlock(failedPacks: PackFailure[]): string {
+	if (failedPacks.length === 0) {
+		return '';
+	}
+	// Failed audits produce no findings, so the groups above understate the
+	// picture — surface them explicitly rather than reading as "clean".
+	return [
+		'',
+		`> ⚠️ ${failedPacks.length} pack(s) failed to audit (findings above are incomplete):`,
+		...failedPacks.map(failure => `> - \`${failure.pack}\`: ${failure.reason}`),
+	].join('\n');
+}
+
 /** Render the dry-run previews for every repo as Markdown. */
-export function renderPreview(
-	previews: {repo: string; preview: DryRunPreview}[],
-): string {
+export function renderPreview(previews: PreviewEntry[]): string {
 	const parts = ['# Sentinel dry run', '', 'No issues were filed.'];
 
-	for (const {repo, preview} of previews) {
+	for (const {repo, preview, failedPacks} of previews) {
 		parts.push(
 			[
 				`## ${repo}`,
@@ -100,6 +124,7 @@ export function renderPreview(
 				group('Suppressed by a prior dismissal', preview.suppressedByLabel),
 				'',
 				`**Would auto-resolve:** ${preview.wouldResolve} stale issue(s)`,
+				failureBlock(failedPacks),
 			].join('\n'),
 		);
 	}

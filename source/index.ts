@@ -154,6 +154,8 @@ export {
 } from './run/expand.js';
 export {
 	type DryRunPreview,
+	type PackFailure,
+	type PreviewEntry,
 	previewReconciliation,
 	renderPreview,
 } from './run/preview.js';

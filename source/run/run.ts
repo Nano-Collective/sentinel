@@ -22,7 +22,11 @@ import type {RulePack} from '../rule-packs/types.js';
 import {auditPack} from './audit.js';
 import type {PrepareResult} from './clone.js';
 import {expandTargets} from './expand.js';
-import {type DryRunPreview, previewReconciliation} from './preview.js';
+import {
+	type PackFailure,
+	type PreviewEntry,
+	previewReconciliation,
+} from './preview.js';
 import type {RepoLister} from './repo-lister.js';
 import {unionPatterns} from './select.js';
 import type {
@@ -74,7 +78,7 @@ export interface RunReport {
 	/** Live-run reconciliation results (empty on a dry run). */
 	reconciled: {repo: string; result: ReconcileResult}[];
 	/** Dry-run previews (empty on a live run). */
-	previews: {repo: string; preview: DryRunPreview}[];
+	previews: PreviewEntry[];
 	packLoadErrors: PackLoadError[];
 	/** Target-expansion and clone failures. */
 	targetErrors: string[];
@@ -107,7 +111,7 @@ export async function runFromConfig(
 
 	const repos: RepoOutcome[] = [];
 	const reconciled: {repo: string; result: ReconcileResult}[] = [];
-	const previews: {repo: string; preview: DryRunPreview}[] = [];
+	const previews: PreviewEntry[] = [];
 	const filing = Boolean(deps.client) && !options.dryRun;
 
 	// Expand explicit and pattern targets into concrete repositories.
@@ -212,7 +216,15 @@ export async function runFromConfig(
 					resolveAfterMisses: options.resolveAfterMisses,
 				},
 			);
-			previews.push({repo: repoName, preview});
+			const failedPacks: PackFailure[] = packOutcomes
+				.filter(outcome => !outcome.ok)
+				.map(outcome => ({
+					pack: outcome.pack,
+					reason: outcome.runError
+						? `run error: ${outcome.runError}`
+						: `malformed output after ${outcome.attempts} attempt(s) (${outcome.errors.length} validation error(s))`,
+				}));
+			previews.push({repo: repoName, preview, failedPacks});
 		}
 	}
 

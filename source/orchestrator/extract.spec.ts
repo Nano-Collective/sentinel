@@ -52,3 +52,21 @@ test('returns null when there is no array', t => {
 test('returns null when a bracket span is not valid JSON', t => {
 	t.is(extractJsonArray('see [1, 2, unterminated'), null);
 });
+
+test('salvages complete objects from a truncated findings array', t => {
+	const truncated =
+		'Here you go:\n[{"rule":"a","file":"x"},{"rule":"b","file":"y"},{"rule":"c';
+	t.is(
+		extractJsonArray(truncated),
+		'[{"rule":"a","file":"x"},{"rule":"b","file":"y"}]',
+	);
+});
+
+test('salvage ignores braces inside strings', t => {
+	const truncated = '[{"snippet":"a { b } c"},{"snippet":"d {';
+	t.is(extractJsonArray(truncated), '[{"snippet":"a { b } c"}]');
+});
+
+test('salvage returns null when no complete object survives', t => {
+	t.is(extractJsonArray('[{"rule":"a'), null);
+});
