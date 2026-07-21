@@ -29,13 +29,37 @@ export {
 	CONFIDENCES,
 	isConfidence,
 	isSeverity,
+	meetsSeverityThreshold,
 	SEVERITIES,
+	severityRank,
 } from './findings/types.js';
 export type {
 	ValidationError,
 	ValidationResult,
 } from './findings/validate.js';
 export {validateFindings} from './findings/validate.js';
+export {buildIssueBody, buildIssueTitle} from './issues/body.js';
+export {
+	buildIssueContent,
+	fileFindings,
+	qualifyingFindings,
+	targetRepoFor,
+} from './issues/file.js';
+export {
+	buildGhIssueArgs,
+	ghIssueClient,
+	parseIssueUrl,
+} from './issues/gh-client.js';
+export type {
+	CreatedIssue,
+	CreateIssueParams,
+	FiledIssue,
+	FilingContext,
+	FilingError,
+	FilingResult,
+	GitHubClient,
+	IssueContent,
+} from './issues/types.js';
 export {runAudit} from './orchestrator/audit.js';
 export {
 	type AutoFixOptions,

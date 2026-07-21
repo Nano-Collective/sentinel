@@ -46,6 +46,11 @@ function reportingContract(packName: string, category: string): string {
 		`- "confidence": string — one of ${quotedList(CONFIDENCES)}`,
 		'- "offending_snippet": string — the exact code the finding refers to',
 		'',
+		'Also include these fields where you can; they become the issue a human reads:',
+		'- "summary": string — a one-line description of the finding',
+		'- "rationale": string — why the finding has the severity you assigned',
+		'- "suggested_next_steps": string — what a reviewer should do next (not a patch)',
+		'',
 		'Files below are shown with `N| ` line-number prefixes; use them for line_range.',
 		'Do not include the prefix in offending_snippet.',
 	].join('\n');

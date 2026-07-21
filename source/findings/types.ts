@@ -36,6 +36,30 @@ export interface Finding {
 	confidence: Confidence;
 	/** The relevant code excerpt. */
 	offendingSnippet: string;
+	/**
+	 * The human-facing layer the issue body renders. These are model-authored
+	 * (they cannot be derived from the machine fields) and optional: a finding
+	 * still validates without them, but a good pack produces them.
+	 */
+	/** A one-line summary of the finding. */
+	summary?: string;
+	/** Why the finding carries the severity it does. */
+	rationale?: string;
+	/** What a reviewer should do next. Not a patch — a next step. */
+	suggestedNextSteps?: string;
+}
+
+/** The rank of a severity, 0 (low) to 3 (critical). */
+export function severityRank(severity: Severity): number {
+	return SEVERITIES.indexOf(severity);
+}
+
+/** Returns true if a finding's severity is at or above the filing threshold. */
+export function meetsSeverityThreshold(
+	severity: Severity,
+	threshold: Severity,
+): boolean {
+	return severityRank(severity) >= severityRank(threshold);
 }
 
 /** Returns true if the value is one of the allowed severities. */

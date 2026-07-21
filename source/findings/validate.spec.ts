@@ -32,6 +32,25 @@ test('accepts a well-formed array and normalises to camelCase', t => {
 	);
 });
 
+test('normalises the optional human-facing fields when present', t => {
+	const result = validateFindings([
+		validFinding({
+			summary: 'Missing signer check',
+			rationale: 'moves funds without asserting the signer',
+			suggested_next_steps: 'add a Signer constraint',
+		}),
+	]);
+	t.true(result.valid);
+	t.is(result.findings[0]?.summary, 'Missing signer check');
+	t.is(result.findings[0]?.suggestedNextSteps, 'add a Signer constraint');
+});
+
+test('rejects a non-string optional field', t => {
+	const result = validateFindings([validFinding({summary: 42})]);
+	t.false(result.valid);
+	t.true(result.errors.some(e => e.field === 'summary'));
+});
+
 test('accepts a JSON string and parses it', t => {
 	const result = validateFindings(JSON.stringify([validFinding()]));
 	t.true(result.valid);

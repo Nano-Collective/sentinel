@@ -152,11 +152,18 @@ function validateFinding(
 		});
 	}
 
+	// Optional human-facing fields: when present, they must be strings.
+	for (const key of ['summary', 'rationale', 'suggested_next_steps']) {
+		if (value[key] !== undefined && typeof value[key] !== 'string') {
+			errors.push({index, field: key, message: `${key} must be a string`});
+		}
+	}
+
 	if (errors.length > before) {
 		return null;
 	}
 
-	return {
+	const finding: Finding = {
 		rule: value.rule as string,
 		file: value.file as string,
 		lineRange: value.line_range as LineRange,
@@ -165,6 +172,16 @@ function validateFinding(
 		confidence: value.confidence as Confidence,
 		offendingSnippet: value.offending_snippet as string,
 	};
+	if (typeof value.summary === 'string') {
+		finding.summary = value.summary;
+	}
+	if (typeof value.rationale === 'string') {
+		finding.rationale = value.rationale;
+	}
+	if (typeof value.suggested_next_steps === 'string') {
+		finding.suggestedNextSteps = value.suggested_next_steps;
+	}
+	return finding;
 }
 
 /**
