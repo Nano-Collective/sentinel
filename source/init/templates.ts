@@ -57,6 +57,11 @@ on:
         type: boolean
         default: false
 
+# One audit at a time; never cancel an in-progress run.
+concurrency:
+  group: sentinel
+  cancel-in-progress: false
+
 permissions:
   contents: read
   issues: write
@@ -65,15 +70,26 @@ jobs:
   audit:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - name: Check out configuration
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
         with:
           node-version: "22"
+
       - name: Run Sentinel
         env:
-          GITHUB_TOKEN: \${{ secrets.GITHUB_TOKEN }}
+          # A token that can read the audited repos and open issues on them.
+          # The default GITHUB_TOKEN only reaches THIS repository, so to audit
+          # other repos add a PAT (or GitHub App token) as the SENTINEL_TOKEN
+          # secret with repo + issues scope.
+          GH_TOKEN: \${{ secrets.SENTINEL_TOKEN || secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: \${{ secrets.SENTINEL_TOKEN || secrets.GITHUB_TOKEN }}
         run: >-
           npx -y @nanocollective/sentinel@latest run
+          --workspace "$RUNNER_TEMP/sentinel"
+          --output "$GITHUB_STEP_SUMMARY"
           \${{ github.event.inputs.dry_run == 'true' && '--dry-run' || '' }}
 `;
 }

@@ -130,6 +130,7 @@ export type {
 	RulePackManifest,
 } from './rule-packs/types.js';
 export {auditPack, type PackAuditContext} from './run/audit.js';
+export {buildCloneArgs, type EnsureTargetsResult} from './run/clone.js';
 export {
 	type DryRunPreview,
 	previewReconciliation,

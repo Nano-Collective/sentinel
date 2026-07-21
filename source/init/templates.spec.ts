@@ -66,6 +66,15 @@ test('the workflow embeds the schedule and dispatch input', t => {
 	t.true(yaml.includes('@nanocollective/sentinel'));
 });
 
+test('the workflow wires the token, workspace, and step summary', t => {
+	const yaml = workflowYaml(options());
+	t.true(yaml.includes('SENTINEL_TOKEN || secrets.GITHUB_TOKEN'));
+	t.true(yaml.includes('--workspace "$RUNNER_TEMP/sentinel"'));
+	t.true(yaml.includes('--output "$GITHUB_STEP_SUMMARY"'));
+	t.true(yaml.includes('concurrency:'));
+	t.true(yaml.includes("dry_run == 'true'"));
+});
+
 test('the readme points at the authoring docs and the schedule', t => {
 	const readme = configReadme(options({schedule: '0 6 * * *'}));
 	t.true(readme.includes('rule-packs/authoring'));

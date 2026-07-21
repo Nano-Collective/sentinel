@@ -20,6 +20,7 @@ import {scaffold} from './init/scaffold.js';
 import type {InitOptions} from './init/types.js';
 import {ghIssueClient} from './issues/gh-client.js';
 import {nanocoderRunner} from './orchestrator/nanocoder-runner.js';
+import {ensureTargets} from './run/clone.js';
 import {renderPreview} from './run/preview.js';
 import {renderReport} from './run/report.js';
 import {runFromConfig, runLocal} from './run/run.js';
@@ -203,6 +204,22 @@ async function runRun(argv: string[]): Promise<number> {
 	}
 
 	const dryRun = flags.get('dry-run') === true;
+	const workspace = flagStr(flags, 'workspace') ?? '.';
+
+	// Clone any target repos not already present in the workspace.
+	if (flags.get('no-clone') !== true) {
+		const repos = parsed.config.targets
+			.map(target => target.repo)
+			.filter((repo): repo is string => Boolean(repo));
+		const ensured = ensureTargets(repos, workspace);
+		for (const repo of ensured.cloned) {
+			console.log(`cloned ${repo}`);
+		}
+		for (const {repo, error} of ensured.errors) {
+			console.error(`clone failed for ${repo}: ${error}`);
+		}
+	}
+
 	// The client is available whenever a token is present — a dry run uses it to
 	// read existing issues for the preview, a live run to file.
 	const hasToken = Boolean(process.env.GITHUB_TOKEN);
@@ -216,7 +233,7 @@ async function runRun(argv: string[]): Promise<number> {
 			now: new Date().toISOString(),
 		},
 		{
-			workspaceDir: flagStr(flags, 'workspace') ?? '.',
+			workspaceDir: workspace,
 			packsDir:
 				flagStr(flags, 'packs-dir') ?? join(dirname(configPath), 'rule-packs'),
 			configRepo:
