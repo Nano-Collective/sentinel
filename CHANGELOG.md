@@ -1,3 +1,20 @@
+# 0.1.0-alpha.1
+
+Rounds out the v1 surface on top of the first alpha.
+
+- **Org pattern targets.** `pattern: "org/*"` now enumerates the owner's
+  repositories (via `gh`) and audits the matches, merging rule packs when a repo
+  matches several targets — no more hand-listing every repo.
+- **Run records + dashboard.** Each run commits a JSON record to `runs/` and
+  regenerates a self-contained static `dashboard/index.html` (GitHub Pages
+  ready) — the read-side history, no database.
+- **Example rule packs.** Three illustrative, CI-validated packs
+  (`node-server`, `rust-general`, `solana-anchor`) under `examples/rule-packs/`.
+- **From-template install.** A committed `template/` directory (kept in sync
+  with the scaffolder) for the npx-free `degit` / "Use this template" path.
+- **Hardening.** npm publish provenance, issue/PR templates, `SECURITY.md`,
+  CODEOWNERS.
+
 # 0.1.0-alpha.0
 
 The first published (prerelease) build of Sentinel — an installable, Nanocoder-driven workflow that runs continuous, configurable security and code audits across a GitHub organisation's repositories and files findings as issues.
