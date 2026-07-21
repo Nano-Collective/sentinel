@@ -9,3 +9,4 @@ coverage/
 # Local calibration throwaways
 demo-pack.md
 findings.md
+agents.config.json
