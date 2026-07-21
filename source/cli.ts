@@ -10,7 +10,13 @@
  * (prompting, printing) and is excluded from coverage.
  */
 
-import {readFileSync, writeFileSync} from 'node:fs';
+import {
+	existsSync,
+	mkdirSync,
+	readdirSync,
+	readFileSync,
+	writeFileSync,
+} from 'node:fs';
 import {dirname, join, resolve} from 'node:path';
 import {createInterface} from 'node:readline/promises';
 import {parseConfig} from './config/parse.js';
@@ -19,6 +25,9 @@ import {parseInitArgs} from './init/args.js';
 import {scaffold} from './init/scaffold.js';
 import type {InitOptions} from './init/types.js';
 import {ghIssueClient} from './issues/gh-client.js';
+import {renderDashboard} from './observe/dashboard.js';
+import {buildRunRecord, recordFilename} from './observe/record.js';
+import type {RunMode, RunRecord} from './observe/types.js';
 import {nanocoderRunner} from './orchestrator/nanocoder-runner.js';
 import {prepareRepo} from './run/clone.js';
 import {renderPreview} from './run/preview.js';
@@ -170,6 +179,33 @@ function writeReport(markdown: string, output: string | undefined): void {
 	}
 }
 
+function writeRunRecord(record: RunRecord, recordsDir: string): void {
+	mkdirSync(recordsDir, {recursive: true});
+	const path = join(recordsDir, recordFilename(record.timestamp));
+	writeFileSync(path, `${JSON.stringify(record, null, 2)}\n`);
+	console.log(`Wrote run record to ${path}`);
+}
+
+function writeDashboard(recordsDir: string, dashboardDir: string): void {
+	const records: RunRecord[] = [];
+	if (existsSync(recordsDir)) {
+		for (const name of readdirSync(recordsDir)) {
+			if (!name.endsWith('.json')) {
+				continue;
+			}
+			try {
+				records.push(JSON.parse(readFileSync(join(recordsDir, name), 'utf8')));
+			} catch {
+				// Skip a malformed record rather than fail the whole dashboard.
+			}
+		}
+	}
+	mkdirSync(dashboardDir, {recursive: true});
+	const path = join(dashboardDir, 'index.html');
+	writeFileSync(path, renderDashboard(records));
+	console.log(`Wrote dashboard to ${path}`);
+}
+
 async function runRun(argv: string[]): Promise<number> {
 	if (argv.includes('--help') || argv.includes('-h')) {
 		console.log(RUN_USAGE);
@@ -216,6 +252,7 @@ async function runRun(argv: string[]): Promise<number> {
 	// The client is available whenever a token is present — a dry run uses it to
 	// read existing issues for the preview, a live run to file.
 	const hasToken = Boolean(process.env.GITHUB_TOKEN);
+	const now = new Date().toISOString();
 	const report = await runFromConfig(
 		parsed.config,
 		{
@@ -225,7 +262,7 @@ async function runRun(argv: string[]): Promise<number> {
 			client: hasToken ? ghIssueClient : undefined,
 			repoLister: ghRepoLister,
 			cloneRepo: noClone ? undefined : prepareRepo,
-			now: new Date().toISOString(),
+			now,
 		},
 		{
 			workspaceDir: workspace,
@@ -262,6 +299,23 @@ async function runRun(argv: string[]): Promise<number> {
 		console.log('Dry run — no issues filed.');
 	} else {
 		console.log('No GITHUB_TOKEN — no issues filed.');
+	}
+
+	// Commit the durable run record and regenerate the static dashboard.
+	if (flags.get('no-record') !== true) {
+		const mode: RunMode = dryRun
+			? 'dry-run'
+			: report.filed
+				? 'live'
+				: 'audit-only';
+		const recordsDir = flagStr(flags, 'records-dir') ?? 'runs';
+		writeRunRecord(buildRunRecord(report, now, mode), recordsDir);
+		if (flags.get('no-dashboard') !== true) {
+			writeDashboard(
+				recordsDir,
+				flagStr(flags, 'dashboard-dir') ?? 'dashboard',
+			);
+		}
 	}
 	return 0;
 }

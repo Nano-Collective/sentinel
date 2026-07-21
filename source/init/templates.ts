@@ -62,8 +62,9 @@ concurrency:
   group: sentinel
   cancel-in-progress: false
 
+# contents: write lets the run commit its record and dashboard back to this repo.
 permissions:
-  contents: read
+  contents: write
   issues: write
 
 jobs:
@@ -91,6 +92,16 @@ jobs:
           --workspace "$RUNNER_TEMP/sentinel"
           --output "$GITHUB_STEP_SUMMARY"
           \${{ github.event.inputs.dry_run == 'true' && '--dry-run' || '' }}
+
+      - name: Commit run record and dashboard
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add runs dashboard
+          if ! git diff --cached --quiet; then
+            git commit -m "chore: sentinel run record [skip ci]"
+            git push
+          fi
 `;
 }
 
@@ -197,5 +208,7 @@ the example block and set its key as an environment variable / Actions secret.
 - \`agents.config.json\` — Nanocoder provider/model wiring.
 - \`rule-packs/\` — your rule packs (you author these).
 - \`.github/workflows/sentinel.yml\` — the scheduled audit.
+- \`runs/\` — a committed JSON record per run (the durable history).
+- \`dashboard/\` — a generated static \`index.html\`; serve it via GitHub Pages.
 `;
 }

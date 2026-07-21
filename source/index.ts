@@ -94,6 +94,16 @@ export type {
 	IssueQueryClient,
 	ReconcileClient,
 } from './issues/types.js';
+export {renderDashboard} from './observe/dashboard.js';
+export {buildRunRecord, recordFilename} from './observe/record.js';
+export type {
+	FilingSummary,
+	PackRunRecord,
+	RepoRunRecord,
+	RunMode,
+	RunRecord,
+	SeverityCounts,
+} from './observe/types.js';
 export {runAudit} from './orchestrator/audit.js';
 export {
 	type AutoFixOptions,
