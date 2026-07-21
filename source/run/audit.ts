@@ -48,5 +48,6 @@ export async function auditPack(
 		ok: result.ok,
 		errors: result.errors,
 		runError: result.runError,
+		raw: result.raw,
 	};
 }

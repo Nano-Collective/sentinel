@@ -44,6 +44,8 @@ export interface PackOutcome {
 	ok: boolean;
 	errors: ValidationError[];
 	runError?: string;
+	/** The raw model output, kept for diagnosing a failed audit. */
+	raw?: string;
 }
 
 /** All pack outcomes for one repository. */

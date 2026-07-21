@@ -42,7 +42,46 @@ export function buildNanocoderArgs(
 		'--model',
 		resolveModelId(model, options.useFallback ?? false),
 		'--trust-directory',
+		// Emit one complete JSON report to stdout instead of a streamed,
+		// last-token-lossy human transcript.
+		'--json',
 	];
+}
+
+/**
+ * Parse Nanocoder's `--json` report from stdout into a ModelRunResult. The
+ * report is `{kind, exitCode, finalText, ...}`; on a non-success kind the
+ * message is surfaced as the error. Non-JSON stdout is handed through as-is so
+ * the extractor can still try.
+ */
+export function parseNanocoderReport(stdout: string): ModelRunResult {
+	let report: unknown;
+	try {
+		report = JSON.parse(stdout);
+	} catch {
+		return {ok: true, output: stdout};
+	}
+	if (typeof report !== 'object' || report === null) {
+		return {ok: true, output: stdout};
+	}
+
+	const {kind, finalText, message} = report as {
+		kind?: string;
+		finalText?: unknown;
+		message?: unknown;
+	};
+	const output = typeof finalText === 'string' ? finalText : '';
+	if (kind === 'success') {
+		return {ok: true, output};
+	}
+	return {
+		ok: false,
+		output,
+		error:
+			typeof message === 'string'
+				? message
+				: `nanocoder: ${kind ?? 'unknown result'}`,
+	};
 }
 
 /**
@@ -104,16 +143,19 @@ export const nanocoderRunner: ModelRunner = {
 			};
 		}
 
-		if (result.status !== 0) {
+		const stdout = result.stdout ?? '';
+		if (stdout.trim().length === 0) {
 			return {
 				ok: false,
-				output: result.stdout ?? '',
+				output: '',
 				error:
-					`nanocoder exited with status ${result.status}: ${result.stderr ?? ''}`.trim(),
+					`nanocoder produced no output (status ${result.status}): ${result.stderr ?? ''}`.trim(),
 			};
 		}
 
-		return {ok: true, output: result.stdout ?? ''};
+		// nanocoder may exit non-zero for an error kind but still emit the JSON
+		// report, so parse regardless of status.
+		return parseNanocoderReport(stdout);
 	},
 };
 /* c8 ignore stop */

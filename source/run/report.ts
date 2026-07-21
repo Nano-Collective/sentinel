@@ -27,15 +27,28 @@ function findingSection(finding: Finding): string {
 function packSection(outcome: PackOutcome): string {
 	const header = `### Pack \`${outcome.pack}\` (v${outcome.version})`;
 	if (outcome.runError) {
-		return `${header}\n\n> Run error: ${outcome.runError}`;
+		return `${header}\n\n> Run error: ${outcome.runError}${rawBlock(outcome.raw)}`;
 	}
 	if (!outcome.ok) {
-		return `${header}\n\n> Findings were malformed after ${outcome.attempts} attempt(s); ${outcome.errors.length} validation error(s).`;
+		const detail = outcome.errors
+			.map(error => `${error.field}: ${error.message}`)
+			.join('; ');
+		return `${header}\n\n> Findings were malformed after ${outcome.attempts} attempt(s): ${detail}${rawBlock(outcome.raw)}`;
 	}
 	if (outcome.findings.length === 0) {
 		return `${header}\n\nNo findings.`;
 	}
 	return [header, '', ...outcome.findings.map(findingSection)].join('\n\n');
+}
+
+/** A collapsible block with the raw model output, for diagnosing a failure. */
+function rawBlock(raw: string | undefined): string {
+	if (!raw) {
+		return '';
+	}
+	const capped =
+		raw.length > 6000 ? `${raw.slice(0, 6000)}\n…(truncated)` : raw;
+	return `\n\n<details><summary>Raw model output</summary>\n\n\`\`\`\n${capped}\n\`\`\`\n</details>`;
 }
 
 function repoSection(outcome: RepoOutcome): string {

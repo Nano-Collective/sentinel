@@ -3,6 +3,7 @@ import type {ModelConfig} from '../config/types.js';
 import {
 	buildNanocoderArgs,
 	buildNanocoderEnv,
+	parseNanocoderReport,
 	resolveModelId,
 } from './nanocoder-runner.js';
 
@@ -29,7 +30,7 @@ test('resolveModelId falls back to primary when no fallback configured', t => {
 	);
 });
 
-test('buildNanocoderArgs mirrors the collective invocation', t => {
+test('buildNanocoderArgs mirrors the collective invocation with --json', t => {
 	const args = buildNanocoderArgs('the prompt', MODEL);
 	t.deepEqual(args, [
 		'run',
@@ -39,6 +40,7 @@ test('buildNanocoderArgs mirrors the collective invocation', t => {
 		'--model',
 		'llama3.1:70b',
 		'--trust-directory',
+		'--json',
 	]);
 });
 
@@ -56,4 +58,33 @@ test('buildNanocoderEnv sets NANOCODER_CONFIG_DIR when a config dir is given', t
 test('buildNanocoderEnv returns the base env unchanged without a config dir', t => {
 	const base = {PATH: '/bin'};
 	t.is(buildNanocoderEnv(base), base);
+});
+
+test('parseNanocoderReport returns finalText on a success report', t => {
+	const stdout = JSON.stringify({
+		kind: 'success',
+		exitCode: 0,
+		finalText: '```json\n[{"rule":"x"}]\n```\n<<<SENTINEL_END>>>',
+	});
+	const result = parseNanocoderReport(stdout);
+	t.true(result.ok);
+	t.true(result.output.includes('[{"rule":"x"}]'));
+});
+
+test('parseNanocoderReport surfaces an error kind as a failure', t => {
+	const stdout = JSON.stringify({
+		kind: 'error',
+		exitCode: 1,
+		finalText: '',
+		message: 'provider auth failed',
+	});
+	const result = parseNanocoderReport(stdout);
+	t.false(result.ok);
+	t.is(result.error, 'provider auth failed');
+});
+
+test('parseNanocoderReport falls back to raw text when stdout is not the report', t => {
+	const result = parseNanocoderReport('just some text [1,2]');
+	t.true(result.ok);
+	t.is(result.output, 'just some text [1,2]');
 });
