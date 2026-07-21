@@ -43,7 +43,13 @@ The workflow that `init` writes invokes the same package at run time (`pnpm dlx 
 
 ## Path 2: from a template repository (fallback)
 
-If you would rather not run an npm command, the same configuration shape is published as a GitHub template repository. Click **Use this template**, create your config repo from it, and edit the generated files. The template is produced from the same source as the `init` output, so the two paths land on identical files.
+If you would rather not run an npm command, the same configuration shape lives in [`template/`](https://github.com/Nano-Collective/sentinel/tree/main/template) in the Sentinel repository, generated from the same source as the `init` output (a test keeps the two byte-identical). Either **Use this template** on a mirror of it, or copy it directly:
+
+```bash
+npx degit Nano-Collective/sentinel/template my-sentinel-config
+```
+
+Then edit the generated files. The template and `init` land on identical files, so you can switch between the two paths freely.
 
 ## The starter pack, and why it is disabled
 

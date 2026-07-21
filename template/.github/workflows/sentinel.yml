@@ -1,0 +1,57 @@
+name: Sentinel
+
+on:
+  schedule:
+    - cron: "0 6 * * *"
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Run the full audit but file no issues"
+        type: boolean
+        default: false
+
+# One audit at a time; never cancel an in-progress run.
+concurrency:
+  group: sentinel
+  cancel-in-progress: false
+
+# contents: write lets the run commit its record and dashboard back to this repo.
+permissions:
+  contents: write
+  issues: write
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out configuration
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Run Sentinel
+        env:
+          # A token that can read the audited repos and open issues on them.
+          # The default GITHUB_TOKEN only reaches THIS repository, so to audit
+          # other repos add a PAT (or GitHub App token) as the SENTINEL_TOKEN
+          # secret with repo + issues scope.
+          GH_TOKEN: ${{ secrets.SENTINEL_TOKEN || secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.SENTINEL_TOKEN || secrets.GITHUB_TOKEN }}
+        run: >-
+          npx -y @nanocollective/sentinel@latest run
+          --workspace "$RUNNER_TEMP/sentinel"
+          --output "$GITHUB_STEP_SUMMARY"
+          ${{ github.event.inputs.dry_run == 'true' && '--dry-run' || '' }}
+
+      - name: Commit run record and dashboard
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add runs dashboard
+          if ! git diff --cached --quiet; then
+            git commit -m "chore: sentinel run record [skip ci]"
+            git push
+          fi

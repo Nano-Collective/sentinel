@@ -4,6 +4,9 @@
 # Exclude documentation
 docs/**
 
+# Generated scaffold/template output (uses friendly @v4 action tags on purpose)
+template/**
+
 # Exclude configuration and build files
 .husky/**
 dist/**

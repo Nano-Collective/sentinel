@@ -1,0 +1,23 @@
+# Sentinel configuration — one file per install.
+# Docs: https://docs.nanocollective.org/sentinel/docs/configuration
+
+# Repositories to audit and the rule packs that apply to each.
+targets:
+  - repo: your-org/your-repo
+    rule_packs: [example] # replace with your pack names
+
+# When the scheduled audit runs (cron, UTC).
+schedule: "0 6 * * *"
+
+# Findings below this severity appear in the summary but do not file issues.
+severity_threshold: medium # low | medium | high | critical
+
+# Which Nanocoder provider and model to use. Local-first by default.
+model:
+  provider: ollama
+  model: llama3.1:70b
+
+# How findings are filed as issues.
+issues:
+  label: sentinel
+  aggregate_to_config_repo: false
