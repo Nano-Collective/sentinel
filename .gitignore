@@ -10,3 +10,7 @@ coverage/
 demo-pack.md
 findings.md
 agents.config.json
+
+# Nanocoder run artifacts
+.nanocoder/
+nanocoder-preferences.json
