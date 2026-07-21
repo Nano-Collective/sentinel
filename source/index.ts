@@ -19,6 +19,18 @@ export type {
 	Suppression,
 	Target,
 } from './config/types.js';
+export {findingHash} from './dedup/hash.js';
+export {readMarker, readMisses, upsertMarker} from './dedup/markers.js';
+export {
+	planReconciliation,
+	type ReconcileOptions,
+	type ReconcilePlan,
+	SUPPRESSION_LABELS,
+} from './dedup/plan.js';
+export {
+	type ReconcileResult,
+	reconcileFindings,
+} from './dedup/reconcile.js';
 export type {
 	Confidence,
 	Finding,
@@ -46,19 +58,26 @@ export {
 	targetRepoFor,
 } from './issues/file.js';
 export {
+	buildGhCloseArgs,
+	buildGhEditArgs,
 	buildGhIssueArgs,
+	buildGhListArgs,
 	ghIssueClient,
+	parseIssueList,
 	parseIssueUrl,
 } from './issues/gh-client.js';
 export type {
 	CreatedIssue,
 	CreateIssueParams,
+	ExistingIssue,
 	FiledIssue,
 	FilingContext,
 	FilingError,
 	FilingResult,
 	GitHubClient,
 	IssueContent,
+	IssueQueryClient,
+	ReconcileClient,
 } from './issues/types.js';
 export {runAudit} from './orchestrator/audit.js';
 export {

@@ -1,5 +1,12 @@
 import test from 'ava';
-import {buildGhIssueArgs, parseIssueUrl} from './gh-client.js';
+import {
+	buildGhCloseArgs,
+	buildGhEditArgs,
+	buildGhIssueArgs,
+	buildGhListArgs,
+	parseIssueList,
+	parseIssueUrl,
+} from './gh-client.js';
 import type {CreateIssueParams} from './types.js';
 
 console.log('\nissues/gh-client.spec.ts');
@@ -53,4 +60,82 @@ test('parseIssueUrl reads the last line of noisier output', t => {
 
 test('parseIssueUrl returns null when there is no issue url', t => {
 	t.is(parseIssueUrl('something went wrong'), null);
+});
+
+test('buildGhListArgs requests all states and the dedup JSON fields', t => {
+	const args = buildGhListArgs('my-org/x', 'sentinel');
+	t.deepEqual(args, [
+		'issue',
+		'list',
+		'--repo',
+		'my-org/x',
+		'--label',
+		'sentinel',
+		'--state',
+		'all',
+		'--limit',
+		'1000',
+		'--json',
+		'number,url,state,labels,body',
+	]);
+});
+
+test('buildGhEditArgs replaces the body of a numbered issue', t => {
+	t.deepEqual(buildGhEditArgs('my-org/x', 42, 'new body'), [
+		'issue',
+		'edit',
+		'42',
+		'--repo',
+		'my-org/x',
+		'--body',
+		'new body',
+	]);
+});
+
+test('buildGhCloseArgs includes reason and comment when given', t => {
+	t.deepEqual(buildGhCloseArgs('my-org/x', 42, 'completed', 'done'), [
+		'issue',
+		'close',
+		'42',
+		'--repo',
+		'my-org/x',
+		'--reason',
+		'completed',
+		'--comment',
+		'done',
+	]);
+});
+
+test('buildGhCloseArgs omits optional flags when absent', t => {
+	t.deepEqual(buildGhCloseArgs('my-org/x', 42), [
+		'issue',
+		'close',
+		'42',
+		'--repo',
+		'my-org/x',
+	]);
+});
+
+test('parseIssueList maps gh json into ExistingIssues', t => {
+	const json = JSON.stringify([
+		{
+			number: 5,
+			url: 'https://github.com/my-org/x/issues/5',
+			state: 'OPEN',
+			labels: [{name: 'sentinel'}, {name: 'sentinel:wontfix'}],
+			body: 'body text',
+		},
+	]);
+	const issues = parseIssueList(json);
+	t.is(issues.length, 1);
+	t.is(issues[0]?.number, 5);
+	t.is(issues[0]?.state, 'open');
+	t.deepEqual(issues[0]?.labels, ['sentinel', 'sentinel:wontfix']);
+});
+
+test('parseIssueList normalises a closed state', t => {
+	const json = JSON.stringify([
+		{number: 1, url: 'u', state: 'CLOSED', labels: [], body: ''},
+	]);
+	t.is(parseIssueList(json)[0]?.state, 'closed');
 });

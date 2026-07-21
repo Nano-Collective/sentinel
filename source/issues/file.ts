@@ -8,6 +8,8 @@
  */
 
 import type {SentinelConfig} from '../config/types.js';
+import {findingHash} from '../dedup/hash.js';
+import {upsertMarker} from '../dedup/markers.js';
 import {type Finding, meetsSeverityThreshold} from '../findings/types.js';
 import {buildIssueBody, buildIssueTitle} from './body.js';
 import type {
@@ -44,9 +46,14 @@ export function buildIssueContent(
 	config: SentinelConfig,
 	context: FilingContext,
 ): IssueContent {
+	const body = upsertMarker(
+		buildIssueBody(finding, context),
+		'hash',
+		findingHash(finding),
+	);
 	return {
 		title: buildIssueTitle(finding),
-		body: buildIssueBody(finding, context),
+		body,
 		labels: [config.issues.label],
 		assignees: config.issues.assignee ? [config.issues.assignee] : [],
 	};

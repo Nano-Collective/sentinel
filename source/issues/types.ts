@@ -32,6 +32,34 @@ export interface GitHubClient {
 	createIssue(params: CreateIssueParams): Promise<CreatedIssue>;
 }
 
+/** An issue that already exists on the target repo, as read back for dedup. */
+export interface ExistingIssue {
+	number: number;
+	url: string;
+	state: 'open' | 'closed';
+	labels: string[];
+	body: string;
+}
+
+/** Reading and mutating existing issues, needed by the dedup reconcile step. */
+export interface IssueQueryClient {
+	listIssues(params: {repo: string; label: string}): Promise<ExistingIssue[]>;
+	updateIssue(params: {
+		repo: string;
+		number: number;
+		body: string;
+	}): Promise<void>;
+	closeIssue(params: {
+		repo: string;
+		number: number;
+		reason?: string;
+		comment?: string;
+	}): Promise<void>;
+}
+
+/** A client that can both file and reconcile issues. */
+export type ReconcileClient = GitHubClient & IssueQueryClient;
+
 /** Context threaded into body building and routing. */
 export interface FilingContext {
 	/** The `owner/name` repository being audited. */
