@@ -1,6 +1,6 @@
-# 0.1.0
+# 0.1.0-alpha.0
 
-The first published build of Sentinel — an installable, Nanocoder-driven workflow that runs continuous, configurable security and code audits across a GitHub organisation's repositories and files findings as issues.
+The first published (prerelease) build of Sentinel — an installable, Nanocoder-driven workflow that runs continuous, configurable security and code audits across a GitHub organisation's repositories and files findings as issues.
 
 ## What's in this release
 
