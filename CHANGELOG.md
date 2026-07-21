@@ -1,3 +1,24 @@
+# 0.1.0-alpha.2
+
+Fixes from running the full audit loop live against a real repository. Several
+of these affect correctness — an alpha.1 install has broken dedup and cannot
+file on a fresh repo.
+
+- **Dedup no longer refiles duplicates.** The content hash included the line
+  range, which LLMs report inconsistently between runs, so the same finding got
+  a new hash and was refiled. Identity is now `rule + file + category`, which
+  stays stable across runs.
+- **Filing works on a fresh repo.** Sentinel now creates its own labels
+  (`sentinel` and the suppression labels) before filing, instead of crashing
+  when `gh issue create --label` hits a label GitHub does not know about.
+- **A single filing failure no longer aborts the run.** Each create/update/close
+  is tolerated and reported; the batch continues.
+- **Dry-run no longer hides audit failures.** A pack that fails validation is
+  surfaced in the preview instead of reading as "clean".
+- **Truncated model output is salvaged.** When a run is cut off mid-array, the
+  leading complete findings are recovered rather than discarded.
+- **New `--resolve-after-misses` flag** to tune auto-resolution.
+
 # 0.1.0-alpha.1
 
 Rounds out the v1 surface on top of the first alpha.

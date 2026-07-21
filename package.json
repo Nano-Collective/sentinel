@@ -1,6 +1,6 @@
 {
 	"name": "@nanocollective/sentinel",
-	"version": "0.1.0-alpha.1",
+	"version": "0.1.0-alpha.2",
 	"description": "An installable, Nanocoder-driven workflow that runs continuous, configurable security and code audits across a GitHub organisation's repositories and files findings as issues.",
 	"keywords": [
 		"security",
