@@ -132,12 +132,27 @@ export type {
 	RulePackManifest,
 } from './rule-packs/types.js';
 export {auditPack, type PackAuditContext} from './run/audit.js';
-export {buildCloneArgs, type EnsureTargetsResult} from './run/clone.js';
+export {
+	buildCloneArgs,
+	type PrepareResult,
+	prepareRepo,
+} from './run/clone.js';
+export {
+	type ExpandResult,
+	expandTargets,
+	type ResolvedRepoTarget,
+} from './run/expand.js';
 export {
 	type DryRunPreview,
 	previewReconciliation,
 	renderPreview,
 } from './run/preview.js';
+export {
+	buildRepoListArgs,
+	ghRepoLister,
+	parseRepoList,
+	type RepoLister,
+} from './run/repo-lister.js';
 export {countFindings, renderReport} from './run/report.js';
 export {
 	type RunConfigOptions,

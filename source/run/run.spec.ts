@@ -208,7 +208,7 @@ test('applies a per-repo override to suppress a finding before filing', async t 
 	t.is(report.reconciled[0]?.result.suppressedByOverride, 1);
 });
 
-test('skips pattern targets in v1', async t => {
+test('records a target error for a pattern with no repo lister', async t => {
 	const report = await runFromConfig(
 		config({targets: [{pattern: 'my-org/*', rulePacks: ['p']}]}),
 		{
@@ -220,6 +220,66 @@ test('skips pattern targets in v1', async t => {
 		OPTIONS,
 	);
 	t.is(report.outcome.repos.length, 0);
+	t.is(report.targetErrors.length, 1);
+});
+
+test('expands a pattern target via the repo lister and audits the matches', async t => {
+	const report = await runFromConfig(
+		config({targets: [{pattern: 'my-org/web-*', rulePacks: ['p']}]}),
+		{
+			runner: findingRunner(),
+			files: repoFiles(),
+			packs: packLoader({packs: [pack('p')], errors: []}),
+			repoLister: {
+				async list(): Promise<string[]> {
+					return ['my-org/web-app', 'my-org/api', 'my-org/web-admin'];
+				},
+			},
+			now: NOW,
+		},
+		OPTIONS,
+	);
+	t.deepEqual(report.outcome.repos.map(repo => repo.repo).sort(), [
+		'my-org/web-admin',
+		'my-org/web-app',
+	]);
+	t.deepEqual(report.targetErrors, []);
+});
+
+test('records a target error when a clone fails and skips the repo', async t => {
+	const report = await runFromConfig(
+		config(),
+		{
+			runner: findingRunner(),
+			files: repoFiles(),
+			packs: packLoader({packs: [pack('p')], errors: []}),
+			cloneRepo: async () => ({ok: false, skipped: false, error: 'no access'}),
+			now: NOW,
+		},
+		OPTIONS,
+	);
+	t.is(report.outcome.repos.length, 0);
+	t.true(report.targetErrors[0]?.includes('no access'));
+});
+
+test('clones a target when a cloner is provided', async t => {
+	const cloned: string[] = [];
+	const report = await runFromConfig(
+		config(),
+		{
+			runner: findingRunner(),
+			files: repoFiles(),
+			packs: packLoader({packs: [pack('p')], errors: []}),
+			cloneRepo: async repo => {
+				cloned.push(repo);
+				return {ok: true, skipped: false};
+			},
+			now: NOW,
+		},
+		OPTIONS,
+	);
+	t.deepEqual(cloned, ['my-org/a']);
+	t.is(report.outcome.repos.length, 1);
 });
 
 test('runLocal audits a single pack and never files', async t => {

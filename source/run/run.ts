@@ -20,7 +20,10 @@ import {resolveDependencies} from '../rule-packs/dependencies.js';
 import {parseRulePack} from '../rule-packs/parse.js';
 import type {RulePack} from '../rule-packs/types.js';
 import {auditPack} from './audit.js';
+import type {PrepareResult} from './clone.js';
+import {expandTargets} from './expand.js';
 import {type DryRunPreview, previewReconciliation} from './preview.js';
+import type {RepoLister} from './repo-lister.js';
 import {unionPatterns} from './select.js';
 import type {
 	PackLoadError,
@@ -38,6 +41,10 @@ export interface RunDeps {
 	packs: PackLoader;
 	/** Present only when filing issues (the Actions path). */
 	client?: ReconcileClient;
+	/** Lists an owner's repos to expand pattern targets. */
+	repoLister?: RepoLister;
+	/** Ensures a target repo is checked out; omit to assume repos are present. */
+	cloneRepo?: (repo: string, dir: string) => Promise<PrepareResult>;
 	/** ISO timestamp for deterministic reconciliation. */
 	now: string;
 }
@@ -69,6 +76,8 @@ export interface RunReport {
 	/** Dry-run previews (empty on a live run). */
 	previews: {repo: string; preview: DryRunPreview}[];
 	packLoadErrors: PackLoadError[];
+	/** Target-expansion and clone failures. */
+	targetErrors: string[];
 	/** True if issues were filed (client present and not a dry run). */
 	filed: boolean;
 }
@@ -101,14 +110,24 @@ export async function runFromConfig(
 	const previews: {repo: string; preview: DryRunPreview}[] = [];
 	const filing = Boolean(deps.client) && !options.dryRun;
 
-	for (const target of config.targets) {
-		// Pattern targets need org repo enumeration (a GitHub API concern); v1
-		// audits explicit repos.
-		if (!target.repo) {
-			continue;
-		}
+	// Expand explicit and pattern targets into concrete repositories.
+	const expanded = await expandTargets(config.targets, deps.repoLister);
+	const targetErrors = [...expanded.errors];
+
+	for (const target of expanded.targets) {
 		const repoName = target.repo;
 		const repoDir = join(options.workspaceDir, repoName);
+
+		// Clone the repo if a cloner is provided and it is not already present.
+		if (deps.cloneRepo) {
+			const prepared = await deps.cloneRepo(repoName, repoDir);
+			if (!prepared.ok) {
+				targetErrors.push(
+					`could not check out ${repoName}: ${prepared.error ?? 'clone failed'}`,
+				);
+				continue;
+			}
+		}
 
 		const resolvedNames = new Set<string>();
 		const missingPacks: string[] = [];
@@ -202,6 +221,7 @@ export async function runFromConfig(
 		reconciled,
 		previews,
 		packLoadErrors: loaded.errors,
+		targetErrors,
 		filed: filing,
 	};
 }
