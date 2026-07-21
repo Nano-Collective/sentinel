@@ -115,3 +115,9 @@ export type {
 	RulePackError,
 	RulePackManifest,
 } from './rule-packs/types.js';
+export {
+	applyRepoOverride,
+	isSuppressed,
+	matchesSuppression,
+	type OverrideOutcome,
+} from './suppression/apply.js';

@@ -145,6 +145,44 @@ test('auto-resolves an issue that has missed enough runs', async t => {
 	t.is(closed[0]?.reason, 'completed');
 });
 
+test('a per-repo suppression removes a finding before filing', async t => {
+	const {client, created} = fakeClient();
+	const override = {
+		suppress: [{paths: ['gen/**'], reason: 'generated code'}],
+	};
+	const result = await reconcileFindings(
+		[finding('gen/out.rs'), finding('src/main.rs')],
+		config(),
+		client,
+		CTX,
+		NOW,
+		{},
+		override,
+	);
+	t.is(created.length, 1);
+	t.is(created[0]?.repo, 'my-org/my-program');
+	t.is(result.suppressedByOverride, 1);
+	// The non-suppressed finding was filed.
+	t.is(result.created.length, 1);
+});
+
+test('a per-repo threshold override changes what qualifies', async t => {
+	const {client, created} = fakeClient();
+	const override = {severityThreshold: 'critical' as const, suppress: []};
+	const result = await reconcileFindings(
+		[finding('a.rs', 'high')],
+		config({severityThreshold: 'medium'}),
+		client,
+		CTX,
+		NOW,
+		{},
+		override,
+	);
+	// high no longer qualifies under a per-repo critical threshold.
+	t.is(created.length, 0);
+	t.is(result.created.length, 0);
+});
+
 test('routes to the config repo when aggregating', async t => {
 	const {client, created} = fakeClient();
 	const cfg = config({

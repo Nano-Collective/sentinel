@@ -6,18 +6,15 @@
  * neither create nor touch.
  */
 
-import type {SentinelConfig} from '../config/types.js';
-import type {Finding} from '../findings/types.js';
-import {
-	buildIssueContent,
-	qualifyingFindings,
-	targetRepoFor,
-} from '../issues/file.js';
+import type {RepoOverride, SentinelConfig} from '../config/types.js';
+import {type Finding, meetsSeverityThreshold} from '../findings/types.js';
+import {buildIssueContent, targetRepoFor} from '../issues/file.js';
 import type {
 	CreatedIssue,
 	FilingContext,
 	ReconcileClient,
 } from '../issues/types.js';
+import {applyRepoOverride} from '../suppression/apply.js';
 import {upsertMarker} from './markers.js';
 import {planReconciliation, type ReconcileOptions} from './plan.js';
 
@@ -28,7 +25,10 @@ export interface ReconcileResult {
 	touched: number;
 	incremented: number;
 	resolved: number;
+	/** Findings suppressed by a label-closed issue (dedup layer). */
 	suppressed: number;
+	/** Findings removed by the per-repo override's suppress rules. */
+	suppressedByOverride: number;
 }
 
 function trackedBody(body: string, now: string): string {
@@ -46,6 +46,7 @@ export async function reconcileFindings(
 	context: FilingContext,
 	now: string,
 	options: ReconcileOptions = {},
+	override?: RepoOverride,
 ): Promise<ReconcileResult> {
 	const targetRepo = targetRepoFor(config, context);
 	const existing = await client.listIssues({
@@ -53,7 +54,16 @@ export async function reconcileFindings(
 		label: config.issues.label,
 	});
 
-	const qualifying = qualifyingFindings(findings, config);
+	// Layer 3: apply the per-repo override (threshold + suppress rules), then
+	// gate by the effective threshold before planning.
+	const {
+		kept,
+		suppressed: overrideSuppressed,
+		threshold,
+	} = applyRepoOverride(findings, config, override);
+	const qualifying = kept.filter(finding =>
+		meetsSeverityThreshold(finding.severity, threshold),
+	);
 	const plan = planReconciliation(qualifying, existing, options);
 
 	const created: CreatedIssue[] = [];
@@ -100,5 +110,6 @@ export async function reconcileFindings(
 		incremented: plan.toIncrementMiss.length,
 		resolved: plan.toResolve.length,
 		suppressed: plan.suppressed.length,
+		suppressedByOverride: overrideSuppressed.length,
 	};
 }
