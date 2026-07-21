@@ -50,6 +50,11 @@ export interface RunConfigOptions {
 	packsDir: string;
 	/** The config repo's owner/name, for issue routing and footers. */
 	configRepo?: string;
+	/**
+	 * The config repo directory holding nanocoder's agents.config.json. Passed
+	 * to the runner as NANOCODER_CONFIG_DIR so provider wiring lives there.
+	 */
+	configDir?: string;
 	/** Audit but file nothing. */
 	dryRun?: boolean;
 	autoFix?: AutoFixOptions;
@@ -132,6 +137,11 @@ export async function runFromConfig(
 
 		const files = await deps.files.read(repoDir, unionPatterns(resolvedPacks));
 
+		const runnerOptions: AutoFixOptions = {
+			...options.autoFix,
+			cwd: repoDir,
+			configDir: options.configDir,
+		};
 		const packOutcomes: PackOutcome[] = [];
 		for (const pack of resolvedPacks) {
 			packOutcomes.push(
@@ -140,7 +150,7 @@ export async function runFromConfig(
 					{repoName, files},
 					config.model,
 					deps.runner,
-					options.autoFix ?? {},
+					runnerOptions,
 				),
 			);
 		}
@@ -211,7 +221,7 @@ export async function runLocal(
 	repoDir: string,
 	model: SentinelConfig['model'],
 	deps: RunLocalDeps,
-	autoFix: AutoFixOptions = {},
+	options: AutoFixOptions = {},
 ): Promise<RunOutcome> {
 	const text = await deps.files.readText(packPath);
 	if (text === null) {
@@ -232,7 +242,7 @@ export async function runLocal(
 		{repoName: repoDir, files},
 		model,
 		deps.runner,
-		autoFix,
+		{...options, cwd: repoDir},
 	);
 
 	return {repos: [{repo: repoDir, packs: [outcome], missingPacks: []}]};

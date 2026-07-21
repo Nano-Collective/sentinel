@@ -1,6 +1,10 @@
 import test from 'ava';
 import type {ModelConfig} from '../config/types.js';
-import {buildNanocoderArgs, resolveModelId} from './nanocoder-runner.js';
+import {
+	buildNanocoderArgs,
+	buildNanocoderEnv,
+	resolveModelId,
+} from './nanocoder-runner.js';
 
 console.log('\norchestrator/nanocoder-runner.spec.ts');
 
@@ -41,4 +45,15 @@ test('buildNanocoderArgs mirrors the collective invocation', t => {
 test('buildNanocoderArgs uses the fallback model when opted in', t => {
 	const args = buildNanocoderArgs('p', MODEL, {useFallback: true});
 	t.is(args[args.indexOf('--model') + 1], 'gpt-x');
+});
+
+test('buildNanocoderEnv sets NANOCODER_CONFIG_DIR when a config dir is given', t => {
+	const env = buildNanocoderEnv({PATH: '/bin'}, '/cfg');
+	t.is(env.NANOCODER_CONFIG_DIR, '/cfg');
+	t.is(env.PATH, '/bin');
+});
+
+test('buildNanocoderEnv returns the base env unchanged without a config dir', t => {
+	const base = {PATH: '/bin'};
+	t.is(buildNanocoderEnv(base), base);
 });

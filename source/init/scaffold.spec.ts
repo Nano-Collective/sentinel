@@ -29,6 +29,7 @@ test('writes the full file set into an empty directory', t => {
 		const result = scaffold(OPTIONS, dir);
 		t.deepEqual(result.written, [
 			'sentinel.yaml',
+			'agents.config.json',
 			'.github/workflows/sentinel.yml',
 			'rule-packs/_starter/example.md',
 			'README.md',

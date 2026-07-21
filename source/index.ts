@@ -55,6 +55,7 @@ export {planInit} from './init/plan.js';
 export {type ScaffoldResult, scaffold} from './init/scaffold.js';
 export {
 	configReadme,
+	nanocoderConfig,
 	sentinelYaml,
 	starterPack,
 	workflowYaml,
@@ -103,6 +104,7 @@ export {
 export {extractJsonArray} from './orchestrator/extract.js';
 export {
 	buildNanocoderArgs,
+	buildNanocoderEnv,
 	nanocoderRunner,
 	resolveModelId,
 } from './orchestrator/nanocoder-runner.js';

@@ -137,6 +137,33 @@ it with rules that describe the code your organisation actually ships.
 `;
 }
 
+/**
+ * A nanocoder `agents.config.json` template. Sentinel points nanocoder at this
+ * file (via NANOCODER_CONFIG_DIR) so the provider/model wiring lives in the
+ * config repo — the same shape ContentForest uses. Local providers (Ollama,
+ * LM Studio) are usually auto-detected and need no entry here; the example
+ * below is a cloud provider to edit or delete.
+ */
+export function nanocoderConfig(): string {
+	return `${JSON.stringify(
+		{
+			nanocoder: {
+				providers: [
+					{
+						name: 'Example cloud provider — edit or remove',
+						sdkProvider: 'anthropic',
+						baseUrl: 'https://api.example.com/anthropic/v1',
+						apiKey: '${SENTINEL_MODEL_KEY}',
+						models: ['example-model'],
+					},
+				],
+			},
+		},
+		null,
+		2,
+	)}\n`;
+}
+
 /** The config repo README pointing at the pack authoring docs. */
 export function configReadme(options: InitOptions): string {
 	return `# Sentinel configuration
@@ -156,9 +183,18 @@ Sentinel ships **no rule packs** — it does nothing until you write one.
 3. Commit and push. The audit runs on its schedule (\`${options.schedule}\`), or
    dispatch the **Sentinel** workflow manually (use dry-run first).
 
+## Model configuration
+
+\`sentinel.yaml\` names *which* model to use (id + provider). The provider
+*wiring* (endpoint, API key) lives in \`agents.config.json\`, which Sentinel hands
+to Nanocoder — the same shape ContentForest uses. Local providers (Ollama, LM
+Studio) are usually auto-detected and need no entry; for a cloud provider, edit
+the example block and set its key as an environment variable / Actions secret.
+
 ## Layout
 
 - \`sentinel.yaml\` — targets, schedule, model, and issue routing.
+- \`agents.config.json\` — Nanocoder provider/model wiring.
 - \`rule-packs/\` — your rule packs (you author these).
 - \`.github/workflows/sentinel.yml\` — the scheduled audit.
 `;

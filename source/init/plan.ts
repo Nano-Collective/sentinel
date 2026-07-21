@@ -6,6 +6,7 @@
 
 import {
 	configReadme,
+	nanocoderConfig,
 	sentinelYaml,
 	starterPack,
 	workflowYaml,
@@ -16,6 +17,7 @@ import type {InitOptions, ScaffoldFile} from './types.js';
 export function planInit(options: InitOptions): ScaffoldFile[] {
 	return [
 		{path: 'sentinel.yaml', content: sentinelYaml(options)},
+		{path: 'agents.config.json', content: nanocoderConfig()},
 		{path: '.github/workflows/sentinel.yml', content: workflowYaml(options)},
 		{path: 'rule-packs/_starter/example.md', content: starterPack()},
 		{path: 'README.md', content: configReadme(options)},

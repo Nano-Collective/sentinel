@@ -45,6 +45,21 @@ export function buildNanocoderArgs(
 	];
 }
 
+/**
+ * The environment for the Nanocoder spawn. When a config dir is given, point
+ * Nanocoder at it via NANOCODER_CONFIG_DIR so it loads the config repo's
+ * `agents.config.json` regardless of the audited-repo working directory.
+ */
+export function buildNanocoderEnv(
+	base: NodeJS.ProcessEnv,
+	configDir?: string,
+): NodeJS.ProcessEnv {
+	if (!configDir) {
+		return base;
+	}
+	return {...base, NANOCODER_CONFIG_DIR: configDir};
+}
+
 /* c8 ignore start -- spawns a real process; not exercised in unit tests. */
 export const nanocoderRunner: ModelRunner = {
 	async run(
@@ -60,7 +75,7 @@ export const nanocoderRunner: ModelRunner = {
 				encoding: 'utf8',
 				stdio: ['ignore', 'pipe', 'pipe'],
 				timeout: options.timeoutMs ?? DEFAULT_TIMEOUT_MS,
-				env: process.env,
+				env: buildNanocoderEnv(process.env, options.configDir),
 				maxBuffer: 64 * 1024 * 1024,
 			},
 		);

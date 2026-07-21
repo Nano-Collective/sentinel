@@ -3,6 +3,7 @@ import {parseConfig} from '../config/parse.js';
 import {parseRulePack} from '../rule-packs/parse.js';
 import {
 	configReadme,
+	nanocoderConfig,
 	sentinelYaml,
 	starterPack,
 	workflowYaml,
@@ -73,6 +74,12 @@ test('the workflow wires the token, workspace, and step summary', t => {
 	t.true(yaml.includes('--output "$GITHUB_STEP_SUMMARY"'));
 	t.true(yaml.includes('concurrency:'));
 	t.true(yaml.includes("dry_run == 'true'"));
+});
+
+test('the nanocoder config is valid JSON with a providers block', t => {
+	const parsed = JSON.parse(nanocoderConfig());
+	t.true(Array.isArray(parsed.nanocoder.providers));
+	t.is(parsed.nanocoder.providers[0]?.apiKey, '${SENTINEL_MODEL_KEY}');
 });
 
 test('the readme points at the authoring docs and the schedule', t => {

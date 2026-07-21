@@ -185,10 +185,13 @@ async function runRun(argv: string[]): Promise<number> {
 			provider: flagStr(flags, 'provider') ?? 'ollama',
 			model: flagStr(flags, 'model') ?? 'llama3.1:70b',
 		};
-		const outcome = await runLocal(rulePack, repo, model, {
-			runner: nanocoderRunner,
-			files: fsRepoFiles,
-		});
+		const outcome = await runLocal(
+			rulePack,
+			repo,
+			model,
+			{runner: nanocoderRunner, files: fsRepoFiles},
+			{configDir: flagStr(flags, 'config-dir')},
+		);
 		writeReport(renderReport(outcome), output);
 		return 0;
 	}
@@ -236,6 +239,8 @@ async function runRun(argv: string[]): Promise<number> {
 			workspaceDir: workspace,
 			packsDir:
 				flagStr(flags, 'packs-dir') ?? join(dirname(configPath), 'rule-packs'),
+			// nanocoder's agents.config.json lives beside sentinel.yaml.
+			configDir: flagStr(flags, 'config-dir') ?? dirname(configPath),
 			configRepo:
 				flagStr(flags, 'config-repo') ?? process.env.GITHUB_REPOSITORY,
 			dryRun,

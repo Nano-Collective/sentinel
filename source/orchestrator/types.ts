@@ -13,6 +13,12 @@ import type {ValidationError} from '../findings/validate.js';
 export interface RunnerOptions {
 	/** Working directory for the run (the cloned repo). */
 	cwd?: string;
+	/**
+	 * Directory holding nanocoder's `agents.config.json` (the Sentinel config
+	 * repo). Passed to nanocoder as NANOCODER_CONFIG_DIR so provider/model
+	 * wiring lives in the config repo, the way ContentForest keeps it in its own.
+	 */
+	configDir?: string;
 	/** Hard timeout for the model process, in milliseconds. */
 	timeoutMs?: number;
 	/** Use the configured cloud fallback model instead of the primary. */
