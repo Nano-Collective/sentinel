@@ -12,6 +12,7 @@ import {join} from 'node:path';
 import {parseRepoOverride} from '../config/repo-override.js';
 import type {RepoOverride, SentinelConfig} from '../config/types.js';
 import {type ReconcileResult, reconcileFindings} from '../dedup/reconcile.js';
+import {targetRepoFor} from '../issues/file.js';
 import type {FilingContext, ReconcileClient} from '../issues/types.js';
 import type {AutoFixOptions} from '../orchestrator/auto-fix.js';
 import type {ModelRunner} from '../orchestrator/types.js';
@@ -19,6 +20,7 @@ import {resolveDependencies} from '../rule-packs/dependencies.js';
 import {parseRulePack} from '../rule-packs/parse.js';
 import type {RulePack} from '../rule-packs/types.js';
 import {auditPack} from './audit.js';
+import {type DryRunPreview, previewReconciliation} from './preview.js';
 import {unionPatterns} from './select.js';
 import type {
 	PackLoadError,
@@ -57,7 +59,10 @@ export interface RunConfigOptions {
 /** Everything a config-driven run produced. */
 export interface RunReport {
 	outcome: RunOutcome;
+	/** Live-run reconciliation results (empty on a dry run). */
 	reconciled: {repo: string; result: ReconcileResult}[];
+	/** Dry-run previews (empty on a live run). */
+	previews: {repo: string; preview: DryRunPreview}[];
 	packLoadErrors: PackLoadError[];
 	/** True if issues were filed (client present and not a dry run). */
 	filed: boolean;
@@ -88,6 +93,7 @@ export async function runFromConfig(
 
 	const repos: RepoOutcome[] = [];
 	const reconciled: {repo: string; result: ReconcileResult}[] = [];
+	const previews: {repo: string; preview: DryRunPreview}[] = [];
 	const filing = Boolean(deps.client) && !options.dryRun;
 
 	for (const target of config.targets) {
@@ -141,13 +147,17 @@ export async function runFromConfig(
 
 		repos.push({repo: repoName, packs: packOutcomes, missingPacks});
 
-		if (deps.client && filing) {
-			const findings = packOutcomes.flatMap(outcome => outcome.findings);
-			const override = await readOverride(deps.files, repoDir);
-			const context: FilingContext = {
-				auditedRepo: repoName,
-				configRepo: options.configRepo,
-			};
+		if (!deps.client) {
+			continue;
+		}
+		const findings = packOutcomes.flatMap(outcome => outcome.findings);
+		const override = await readOverride(deps.files, repoDir);
+		const context: FilingContext = {
+			auditedRepo: repoName,
+			configRepo: options.configRepo,
+		};
+
+		if (filing) {
 			const result = await reconcileFindings(
 				findings,
 				config,
@@ -158,12 +168,29 @@ export async function runFromConfig(
 				override,
 			);
 			reconciled.push({repo: repoName, result});
+		} else {
+			// Dry run: read existing issues and compute the preview, mutating nothing.
+			const existing = await deps.client.listIssues({
+				repo: targetRepoFor(config, context),
+				label: config.issues.label,
+			});
+			const preview = previewReconciliation(
+				findings,
+				config,
+				existing,
+				override,
+				{
+					resolveAfterMisses: options.resolveAfterMisses,
+				},
+			);
+			previews.push({repo: repoName, preview});
 		}
 	}
 
 	return {
 		outcome: {repos},
 		reconciled,
+		previews,
 		packLoadErrors: loaded.errors,
 		filed: filing,
 	};

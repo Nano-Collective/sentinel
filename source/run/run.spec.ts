@@ -134,6 +134,9 @@ test('dry run audits but files nothing', async t => {
 	t.false(report.filed);
 	t.is(report.reconciled.length, 0);
 	t.is(created.length, 0);
+	// A dry run computes the preview (reading existing issues) without filing.
+	t.is(report.previews.length, 1);
+	t.is(report.previews[0]?.preview.wouldFileAsNew.length, 1);
 	// The findings are still produced for the report.
 	t.is(report.outcome.repos[0]?.packs[0]?.findings.length, 1);
 });

@@ -130,6 +130,11 @@ export type {
 	RulePackManifest,
 } from './rule-packs/types.js';
 export {auditPack, type PackAuditContext} from './run/audit.js';
+export {
+	type DryRunPreview,
+	previewReconciliation,
+	renderPreview,
+} from './run/preview.js';
 export {countFindings, renderReport} from './run/report.js';
 export {
 	type RunConfigOptions,

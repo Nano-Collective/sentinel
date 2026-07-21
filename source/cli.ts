@@ -20,6 +20,7 @@ import {scaffold} from './init/scaffold.js';
 import type {InitOptions} from './init/types.js';
 import {ghIssueClient} from './issues/gh-client.js';
 import {nanocoderRunner} from './orchestrator/nanocoder-runner.js';
+import {renderPreview} from './run/preview.js';
 import {renderReport} from './run/report.js';
 import {runFromConfig, runLocal} from './run/run.js';
 import {fsPackLoader, fsRepoFiles} from './run/sources.js';
@@ -202,14 +203,16 @@ async function runRun(argv: string[]): Promise<number> {
 	}
 
 	const dryRun = flags.get('dry-run') === true;
-	const filing = !dryRun && Boolean(process.env.GITHUB_TOKEN);
+	// The client is available whenever a token is present — a dry run uses it to
+	// read existing issues for the preview, a live run to file.
+	const hasToken = Boolean(process.env.GITHUB_TOKEN);
 	const report = await runFromConfig(
 		parsed.config,
 		{
 			runner: nanocoderRunner,
 			files: fsRepoFiles,
 			packs: fsPackLoader,
-			client: filing ? ghIssueClient : undefined,
+			client: hasToken ? ghIssueClient : undefined,
 			now: new Date().toISOString(),
 		},
 		{
@@ -222,19 +225,24 @@ async function runRun(argv: string[]): Promise<number> {
 		},
 	);
 
-	writeReport(renderReport(report.outcome), output);
+	// Dry run with a token renders the grouped preview; otherwise the plain
+	// findings report.
+	const markdown =
+		dryRun && report.previews.length > 0
+			? renderPreview(report.previews)
+			: renderReport(report.outcome);
+	writeReport(markdown, output);
+
 	if (report.filed) {
 		for (const {repo: repoName, result} of report.reconciled) {
 			console.log(
 				`${repoName}: filed ${result.created.length}, touched ${result.touched}, resolved ${result.resolved}`,
 			);
 		}
+	} else if (dryRun) {
+		console.log('Dry run — no issues filed.');
 	} else {
-		console.log(
-			dryRun
-				? 'Dry run — no issues filed.'
-				: 'No GITHUB_TOKEN — no issues filed.',
-		);
+		console.log('No GITHUB_TOKEN — no issues filed.');
 	}
 	return 0;
 }
