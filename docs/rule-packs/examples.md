@@ -27,16 +27,11 @@ Its purpose is structural — to show you the shape of a complete pack — not t
 
 ## Published examples
 
-The published example packs live alongside the source in the [Sentinel repository](https://github.com/Nano-Collective/sentinel) and are listed here as they are written and released. Each is drawn from a real NC audit and clearly labelled as illustrative.
+The published example packs live under [`examples/rule-packs/`](https://github.com/Nano-Collective/sentinel/tree/main/examples/rule-packs) in the Sentinel repository. Each is clearly labelled illustrative and is validated in CI (a broken worked example is worse than none). Read them, copy one into your config repo's `rule-packs/`, and rewrite it for your code — especially the "Do not flag" section.
 
-<!--
-As packs are published, list them here, e.g.:
-
-- **`rust-general`** — `unwrap`/`panic` in hot paths, error-handling patterns. From the Nanocoder audit.
-- **`node-server`** — unbounded queries, unvalidated input, unsafe deserialisation. From the ContentForest worker audit.
--->
-
-_No example packs have been published yet. This page is scaffolded ahead of the first release; the list will fill in as NC's dogfooding produces packs worth publishing._
+- **[`node-server`](https://github.com/Nano-Collective/sentinel/blob/main/examples/rule-packs/node-server.md)** — TypeScript/Node backend services: SQL/command injection, SSRF, path traversal, unsafe deserialisation, hardcoded secrets, unbounded queries.
+- **[`rust-general`](https://github.com/Nano-Collective/sentinel/blob/main/examples/rule-packs/rust-general.md)** — general Rust: panic-on-external-input, `unwrap` in hot paths, unchecked `unsafe`, integer overflow.
+- **[`solana-anchor`](https://github.com/Nano-Collective/sentinel/blob/main/examples/rule-packs/solana-anchor.md)** — Anchor Solana programs: missing signer/owner checks, account confusion, unchecked PDA derivation, arithmetic overflow. Depends on `rust-general`.
 
 ## Contributing an example
 
