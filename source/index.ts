@@ -50,6 +50,20 @@ export type {
 	ValidationResult,
 } from './findings/validate.js';
 export {validateFindings} from './findings/validate.js';
+export {type ParsedInitArgs, parseInitArgs} from './init/args.js';
+export {planInit} from './init/plan.js';
+export {type ScaffoldResult, scaffold} from './init/scaffold.js';
+export {
+	configReadme,
+	sentinelYaml,
+	starterPack,
+	workflowYaml,
+} from './init/templates.js';
+export {
+	DEFAULT_INIT_OPTIONS,
+	type InitOptions,
+	type ScaffoldFile,
+} from './init/types.js';
 export {buildIssueBody, buildIssueTitle} from './issues/body.js';
 export {
 	buildIssueContent,
