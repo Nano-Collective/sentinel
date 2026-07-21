@@ -1,0 +1,15 @@
+{
+  "nanocoder": {
+    "providers": [
+      {
+        "name": "Example cloud provider — edit or remove",
+        "sdkProvider": "anthropic",
+        "baseUrl": "https://api.example.com/anthropic/v1",
+        "apiKey": "${SENTINEL_MODEL_KEY}",
+        "models": [
+          "example-model"
+        ]
+      }
+    ]
+  }
+}

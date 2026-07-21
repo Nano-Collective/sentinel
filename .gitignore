@@ -6,10 +6,10 @@ coverage/
 .env.local
 .DS_Store
 
-# Local calibration throwaways
-demo-pack.md
-findings.md
-agents.config.json
+# Local calibration throwaways (root only — must not hide template/agents.config.json)
+/demo-pack.md
+/findings.md
+/agents.config.json
 
 # Nanocoder run artifacts
 .nanocoder/
