@@ -10,10 +10,19 @@
  * (prompting, printing) and is excluded from coverage.
  */
 
+import {readFileSync, writeFileSync} from 'node:fs';
+import {dirname, join} from 'node:path';
 import {createInterface} from 'node:readline/promises';
+import {parseConfig} from './config/parse.js';
+import type {ModelConfig} from './config/types.js';
 import {parseInitArgs} from './init/args.js';
 import {scaffold} from './init/scaffold.js';
 import type {InitOptions} from './init/types.js';
+import {ghIssueClient} from './issues/gh-client.js';
+import {nanocoderRunner} from './orchestrator/nanocoder-runner.js';
+import {renderReport} from './run/report.js';
+import {runFromConfig, runLocal} from './run/run.js';
+import {fsPackLoader, fsRepoFiles} from './run/sources.js';
 
 const USAGE = `sentinel <command>
 
@@ -97,6 +106,139 @@ async function runInit(argv: string[]): Promise<number> {
 	return 0;
 }
 
+const RUN_USAGE = `sentinel run [options]
+
+Config-driven (default): reads sentinel.yaml and audits every target. Files
+issues when GITHUB_TOKEN is set and --dry-run is not passed.
+
+Local (calibration): audit one pack against one repo, write findings to
+Markdown, and file nothing.
+
+Options:
+  --rule-pack <path>    Local mode: the rule pack to run
+  --repo <path>         Local mode: the repository directory to audit
+  --output <path>       Write the Markdown report here (default stdout)
+  --config <path>       Path to sentinel.yaml (default ./sentinel.yaml)
+  --packs-dir <path>    Rule packs directory (default ./rule-packs)
+  --workspace <path>    Where target repos are checked out (default .)
+  --config-repo <o/n>   Config repo, for routing (default $GITHUB_REPOSITORY)
+  --provider <name>     Local mode model provider (default ollama)
+  --model <id>          Local mode model id (default llama3.1:70b)
+  --dry-run             Audit but file no issues`;
+
+function flagMap(argv: string[]): Map<string, string | true> {
+	const map = new Map<string, string | true>();
+	for (let i = 0; i < argv.length; i++) {
+		const token = argv[i];
+		if (!token || !token.startsWith('--')) {
+			continue;
+		}
+		const body = token.slice(2);
+		const eq = body.indexOf('=');
+		if (eq !== -1) {
+			map.set(body.slice(0, eq), body.slice(eq + 1));
+			continue;
+		}
+		const next = argv[i + 1];
+		if (next !== undefined && !next.startsWith('--')) {
+			map.set(body, next);
+			i++;
+		} else {
+			map.set(body, true);
+		}
+	}
+	return map;
+}
+
+function flagStr(
+	flags: Map<string, string | true>,
+	key: string,
+): string | undefined {
+	const value = flags.get(key);
+	return typeof value === 'string' ? value : undefined;
+}
+
+function writeReport(markdown: string, output: string | undefined): void {
+	if (output) {
+		writeFileSync(output, markdown);
+		console.log(`Wrote report to ${output}`);
+	} else {
+		console.log(markdown);
+	}
+}
+
+async function runRun(argv: string[]): Promise<number> {
+	if (argv.includes('--help') || argv.includes('-h')) {
+		console.log(RUN_USAGE);
+		return 0;
+	}
+	const flags = flagMap(argv);
+	const output = flagStr(flags, 'output');
+
+	// Local calibration mode.
+	const rulePack = flagStr(flags, 'rule-pack');
+	const repo = flagStr(flags, 'repo');
+	if (rulePack && repo) {
+		const model: ModelConfig = {
+			provider: flagStr(flags, 'provider') ?? 'ollama',
+			model: flagStr(flags, 'model') ?? 'llama3.1:70b',
+		};
+		const outcome = await runLocal(rulePack, repo, model, {
+			runner: nanocoderRunner,
+			files: fsRepoFiles,
+		});
+		writeReport(renderReport(outcome), output);
+		return 0;
+	}
+
+	// Config-driven mode.
+	const configPath = flagStr(flags, 'config') ?? 'sentinel.yaml';
+	const parsed = parseConfig(readFileSync(configPath, 'utf8'));
+	if (!parsed.valid || !parsed.config) {
+		for (const error of parsed.errors) {
+			console.error(`config error — ${error.field}: ${error.message}`);
+		}
+		return 1;
+	}
+
+	const dryRun = flags.get('dry-run') === true;
+	const filing = !dryRun && Boolean(process.env.GITHUB_TOKEN);
+	const report = await runFromConfig(
+		parsed.config,
+		{
+			runner: nanocoderRunner,
+			files: fsRepoFiles,
+			packs: fsPackLoader,
+			client: filing ? ghIssueClient : undefined,
+			now: new Date().toISOString(),
+		},
+		{
+			workspaceDir: flagStr(flags, 'workspace') ?? '.',
+			packsDir:
+				flagStr(flags, 'packs-dir') ?? join(dirname(configPath), 'rule-packs'),
+			configRepo:
+				flagStr(flags, 'config-repo') ?? process.env.GITHUB_REPOSITORY,
+			dryRun,
+		},
+	);
+
+	writeReport(renderReport(report.outcome), output);
+	if (report.filed) {
+		for (const {repo: repoName, result} of report.reconciled) {
+			console.log(
+				`${repoName}: filed ${result.created.length}, touched ${result.touched}, resolved ${result.resolved}`,
+			);
+		}
+	} else {
+		console.log(
+			dryRun
+				? 'Dry run — no issues filed.'
+				: 'No GITHUB_TOKEN — no issues filed.',
+		);
+	}
+	return 0;
+}
+
 async function main(argv: string[]): Promise<number> {
 	const [command, ...rest] = argv;
 
@@ -104,8 +246,7 @@ async function main(argv: string[]): Promise<number> {
 		case 'init':
 			return runInit(rest);
 		case 'run':
-			console.log('sentinel run is not yet implemented.');
-			return 0;
+			return runRun(rest);
 		case undefined:
 		case '--help':
 		case '-h':

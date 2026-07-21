@@ -129,6 +129,27 @@ export type {
 	RulePackError,
 	RulePackManifest,
 } from './rule-packs/types.js';
+export {auditPack, type PackAuditContext} from './run/audit.js';
+export {countFindings, renderReport} from './run/report.js';
+export {
+	type RunConfigOptions,
+	type RunDeps,
+	type RunLocalDeps,
+	type RunReport,
+	runFromConfig,
+	runLocal,
+} from './run/run.js';
+export {isEnabledPackPath, unionPatterns} from './run/select.js';
+export {fsPackLoader, fsRepoFiles} from './run/sources.js';
+export type {
+	LoadedPacks,
+	PackLoadError,
+	PackLoader,
+	PackOutcome,
+	RepoFiles,
+	RepoOutcome,
+	RunOutcome,
+} from './run/types.js';
 export {
 	applyRepoOverride,
 	isSuppressed,
