@@ -3,6 +3,7 @@ import {
 	buildGhCloseArgs,
 	buildGhEditArgs,
 	buildGhIssueArgs,
+	buildGhLabelArgs,
 	buildGhListArgs,
 	parseIssueList,
 	parseIssueUrl,
@@ -131,6 +132,18 @@ test('parseIssueList maps gh json into ExistingIssues', t => {
 	t.is(issues[0]?.number, 5);
 	t.is(issues[0]?.state, 'open');
 	t.deepEqual(issues[0]?.labels, ['sentinel', 'sentinel:wontfix']);
+});
+
+test('buildGhLabelArgs creates the label idempotently', t => {
+	const args = buildGhLabelArgs('my-org/x', 'sentinel');
+	t.deepEqual(args.slice(0, 5), [
+		'label',
+		'create',
+		'sentinel',
+		'--repo',
+		'my-org/x',
+	]);
+	t.true(args.includes('--force'));
 });
 
 test('parseIssueList normalises a closed state', t => {

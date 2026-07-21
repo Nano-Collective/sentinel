@@ -76,6 +76,7 @@ export {
 	buildGhCloseArgs,
 	buildGhEditArgs,
 	buildGhIssueArgs,
+	buildGhLabelArgs,
 	buildGhListArgs,
 	ghIssueClient,
 	parseIssueList,

@@ -82,6 +82,7 @@ function repoFiles(overrideText: string | null = null): RepoFiles {
 function fakeClient() {
 	const created: CreateIssueParams[] = [];
 	const client: ReconcileClient = {
+		async ensureLabels(): Promise<void> {},
 		async createIssue(params): Promise<CreatedIssue> {
 			created.push(params);
 			return {number: created.length, url: 'u'};

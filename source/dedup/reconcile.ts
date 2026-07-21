@@ -16,7 +16,11 @@ import type {
 } from '../issues/types.js';
 import {applyRepoOverride} from '../suppression/apply.js';
 import {upsertMarker} from './markers.js';
-import {planReconciliation, type ReconcileOptions} from './plan.js';
+import {
+	planReconciliation,
+	type ReconcileOptions,
+	SUPPRESSION_LABELS,
+} from './plan.js';
 
 /** A summary of what one reconcile run did. */
 export interface ReconcileResult {
@@ -29,10 +33,27 @@ export interface ReconcileResult {
 	suppressed: number;
 	/** Findings removed by the per-repo override's suppress rules. */
 	suppressedByOverride: number;
+	/** Per-operation failures that were tolerated (create/update/close). */
+	errors: string[];
 }
 
 function trackedBody(body: string, now: string): string {
 	return upsertMarker(upsertMarker(body, 'last-seen', now), 'misses', '0');
+}
+
+/** Run a mutation, recording (not throwing) its failure so the run continues. */
+async function tolerate(
+	errors: string[],
+	label: string,
+	op: () => Promise<void>,
+): Promise<void> {
+	try {
+		await op();
+	} catch (error) {
+		errors.push(
+			`${label}: ${error instanceof Error ? error.message : String(error)}`,
+		);
+	}
 }
 
 /**
@@ -65,51 +86,82 @@ export async function reconcileFindings(
 		meetsSeverityThreshold(finding.severity, threshold),
 	);
 	const plan = planReconciliation(qualifying, existing, options);
+	const errors: string[] = [];
+
+	// Sentinel's own labels must exist before filing or GitHub rejects them.
+	if (plan.toCreate.length > 0) {
+		await tolerate(errors, 'ensure labels', () =>
+			client.ensureLabels({
+				repo: targetRepo,
+				labels: [config.issues.label, ...SUPPRESSION_LABELS],
+			}),
+		);
+	}
 
 	const created: CreatedIssue[] = [];
 	for (const finding of plan.toCreate) {
 		const content = buildIssueContent(finding, config, context);
-		const issue = await client.createIssue({
-			repo: targetRepo,
-			...content,
-			body: trackedBody(content.body, now),
-		});
-		created.push(issue);
+		try {
+			created.push(
+				await client.createIssue({
+					repo: targetRepo,
+					...content,
+					body: trackedBody(content.body, now),
+				}),
+			);
+		} catch (error) {
+			errors.push(
+				`create (${finding.file}): ${error instanceof Error ? error.message : String(error)}`,
+			);
+		}
 	}
 
+	let touched = 0;
 	for (const {issue} of plan.toTouch) {
-		await client.updateIssue({
-			repo: targetRepo,
-			number: issue.number,
-			body: trackedBody(issue.body, now),
+		await tolerate(errors, `touch #${issue.number}`, async () => {
+			await client.updateIssue({
+				repo: targetRepo,
+				number: issue.number,
+				body: trackedBody(issue.body, now),
+			});
+			touched++;
 		});
 	}
 
+	let incremented = 0;
 	for (const {issue, misses} of plan.toIncrementMiss) {
-		await client.updateIssue({
-			repo: targetRepo,
-			number: issue.number,
-			body: upsertMarker(issue.body, 'misses', String(misses)),
+		await tolerate(errors, `age #${issue.number}`, async () => {
+			await client.updateIssue({
+				repo: targetRepo,
+				number: issue.number,
+				body: upsertMarker(issue.body, 'misses', String(misses)),
+			});
+			incremented++;
 		});
 	}
 
+	let resolved = 0;
 	for (const issue of plan.toResolve) {
-		await client.closeIssue({
-			repo: targetRepo,
-			number: issue.number,
-			reason: 'completed',
-			comment:
-				'Sentinel is auto-resolving this finding: it has not recurred across recent audit runs.',
+		await tolerate(errors, `resolve #${issue.number}`, async () => {
+			await client.closeIssue({
+				repo: targetRepo,
+				number: issue.number,
+				reason: 'completed',
+				comment:
+					'Sentinel is auto-resolving this finding: it has not recurred across recent audit runs.',
+			});
+			resolved++;
 		});
 	}
 
 	return {
 		targetRepo,
 		created,
-		touched: plan.toTouch.length,
-		incremented: plan.toIncrementMiss.length,
-		resolved: plan.toResolve.length,
+		touched,
+		incremented,
+		resolved,
 		suppressed: plan.suppressed.length,
 		suppressedByOverride: overrideSuppressed.length,
+		errors,
 	};
 }

@@ -43,6 +43,10 @@ export interface ExistingIssue {
 
 /** Reading and mutating existing issues, needed by the dedup reconcile step. */
 export interface IssueQueryClient {
+	/** Ensure the given labels exist on the repo (create the missing ones).
+	 * Filing or applying a label GitHub does not know about fails, so Sentinel
+	 * creates its own labels up front. */
+	ensureLabels(params: {repo: string; labels: string[]}): Promise<void>;
 	listIssues(params: {repo: string; label: string}): Promise<ExistingIssue[]>;
 	updateIssue(params: {
 		repo: string;

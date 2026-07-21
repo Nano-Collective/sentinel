@@ -52,7 +52,11 @@ function fakeClient(existing: ExistingIssue[] = []) {
 	const created: CreateIssueParams[] = [];
 	const updated: Update[] = [];
 	const closed: Close[] = [];
+	const labelled: string[] = [];
 	const client: ReconcileClient = {
+		async ensureLabels({labels}): Promise<void> {
+			labelled.push(...labels);
+		},
 		async createIssue(params): Promise<CreatedIssue> {
 			created.push(params);
 			return {number: 100 + created.length, url: 'u'};
@@ -67,7 +71,7 @@ function fakeClient(existing: ExistingIssue[] = []) {
 			closed.push({number, reason});
 		},
 	};
-	return {client, created, updated, closed};
+	return {client, created, updated, closed, labelled};
 }
 
 function openIssueFor(
@@ -83,6 +87,37 @@ function openIssueFor(
 }
 
 const CTX = {auditedRepo: 'my-org/my-program', configRepo: 'my-org/config'};
+
+test('ensures Sentinel labels exist before filing', async t => {
+	const {client, labelled} = fakeClient();
+	await reconcileFindings([finding('a.rs')], config(), client, CTX, NOW);
+	t.true(labelled.includes('sentinel'));
+	t.true(labelled.includes('sentinel:false-positive'));
+});
+
+test('records a filing error and keeps going', async t => {
+	const client = {
+		async ensureLabels(): Promise<void> {},
+		async createIssue(): Promise<never> {
+			throw new Error("label 'sentinel' not found");
+		},
+		async listIssues(): Promise<never[]> {
+			return [];
+		},
+		async updateIssue(): Promise<void> {},
+		async closeIssue(): Promise<void> {},
+	};
+	const result = await reconcileFindings(
+		[finding('a.rs')],
+		config(),
+		client,
+		CTX,
+		NOW,
+	);
+	t.is(result.created.length, 0);
+	t.is(result.errors.length, 1);
+	t.true(result.errors[0]?.includes('not found'));
+});
 
 test('files a new finding with tracking markers set', async t => {
 	const {client, created} = fakeClient();

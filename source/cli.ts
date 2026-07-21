@@ -294,6 +294,9 @@ async function runRun(argv: string[]): Promise<number> {
 			console.log(
 				`${repoName}: filed ${result.created.length}, touched ${result.touched}, resolved ${result.resolved}`,
 			);
+			for (const error of result.errors) {
+				console.error(`  ${repoName} — ${error}`);
+			}
 		}
 	} else if (dryRun) {
 		console.log('Dry run — no issues filed.');

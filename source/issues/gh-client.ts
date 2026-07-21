@@ -88,6 +88,22 @@ export function buildGhCloseArgs(
 	return args;
 }
 
+/** Build the `gh label create` argv (idempotent via --force). */
+export function buildGhLabelArgs(repo: string, label: string): string[] {
+	return [
+		'label',
+		'create',
+		label,
+		'--repo',
+		repo,
+		'--color',
+		'5319e7',
+		'--description',
+		'Managed by Sentinel',
+		'--force',
+	];
+}
+
 /** Parse the JSON `gh issue list --json ...` prints into ExistingIssues. */
 export function parseIssueList(json: string): ExistingIssue[] {
 	const raw = JSON.parse(json) as Array<{
@@ -146,6 +162,14 @@ export const ghIssueClient: ReconcileClient = {
 			);
 		}
 		return created;
+	},
+
+	async ensureLabels({repo, labels}): Promise<void> {
+		// Best effort: a label that already exists or a transient failure must not
+		// abort the run — filing tolerates a missing label per issue.
+		for (const label of labels) {
+			runGh(buildGhLabelArgs(repo, label));
+		}
 	},
 
 	async listIssues({repo, label}): Promise<ExistingIssue[]> {
