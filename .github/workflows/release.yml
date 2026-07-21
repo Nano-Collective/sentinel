@@ -7,6 +7,8 @@ on:
 permissions:
   contents: write
   packages: write
+  # Required for npm publish --provenance (OIDC build attestation).
+  id-token: write
 
 jobs:
   check-version:
@@ -107,7 +109,7 @@ jobs:
           fi
 
       - name: Publish to NPM
-        run: npm publish --access public --tag ${{ needs.check-version.outputs.npm-tag }}
+        run: npm publish --provenance --access public --tag ${{ needs.check-version.outputs.npm-tag }}
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 

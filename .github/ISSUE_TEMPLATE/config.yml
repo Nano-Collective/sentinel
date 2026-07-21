@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Discord
+    url: https://discord.gg/ktPDV6rekE
+    about: Questions, rule-pack help, and general discussion with the Nano Collective.
+  - name: Documentation
+    url: https://docs.nanocollective.org/sentinel/docs
+    about: Guides, the rule-pack format, and the configuration reference.
