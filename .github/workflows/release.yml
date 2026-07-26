@@ -31,7 +31,8 @@ jobs:
       - name: Check version difference
         id: version-check
         run: |
-          PACKAGE_VERSION=$(node -p "require('./package.json').version")
+          # Exported so the inline node scripts below can read it.
+          export PACKAGE_VERSION=$(node -p "require('./package.json').version")
           echo "package-version=$PACKAGE_VERSION" >> $GITHUB_OUTPUT
 
           if [[ "$PACKAGE_VERSION" == *"-beta"* ]]; then
@@ -48,14 +49,34 @@ jobs:
             echo "npm-tag=latest" >> $GITHUB_OUTPUT
           fi
 
-          NPM_VERSION=$(npm view @nanocollective/sentinel version 2>/dev/null || echo "0.0.0")
+          # Read the published list rather than `npm view … version`: that
+          # resolves the `latest` tag, which pre-1.0 can lag behind the newest
+          # prerelease and would then report an already-published version as new.
+          VERSIONS_JSON=$(npm view @nanocollective/sentinel versions --json 2>/dev/null || echo "[]")
+          NPM_VERSION=$(echo "$VERSIONS_JSON" | node -e '
+            let raw = "";
+            process.stdin.on("data", d => (raw += d)).on("end", () => {
+              const parsed = raw.trim() ? JSON.parse(raw) : [];
+              const versions = Array.isArray(parsed) ? parsed : [parsed];
+              console.log(versions.at(-1) ?? "0.0.0");
+            });
+          ')
           echo "npm-version=$NPM_VERSION" >> $GITHUB_OUTPUT
 
-          if [ "$PACKAGE_VERSION" != "$NPM_VERSION" ]; then
-            echo "✅ New version: $PACKAGE_VERSION (npm: $NPM_VERSION)"
+          ALREADY_PUBLISHED=$(echo "$VERSIONS_JSON" | node -e '
+            let raw = "";
+            process.stdin.on("data", d => (raw += d)).on("end", () => {
+              const parsed = raw.trim() ? JSON.parse(raw) : [];
+              const versions = Array.isArray(parsed) ? parsed : [parsed];
+              console.log(versions.includes(process.env.PACKAGE_VERSION) ? "yes" : "no");
+            });
+          ')
+
+          if [ "$ALREADY_PUBLISHED" = "no" ]; then
+            echo "✅ New version: $PACKAGE_VERSION (newest on npm: $NPM_VERSION)"
             echo "should-publish=true" >> $GITHUB_OUTPUT
           else
-            echo "ℹ️ No version change: $PACKAGE_VERSION"
+            echo "ℹ️ Already published: $PACKAGE_VERSION"
             echo "should-publish=false" >> $GITHUB_OUTPUT
           fi
 
@@ -112,6 +133,34 @@ jobs:
         run: npm publish --provenance --access public --tag ${{ needs.check-version.outputs.npm-tag }}
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      # Pre-1.0 every published version is a prerelease, so it goes out under
+      # `alpha`/`beta`/`rc` and never claims `latest`. That leaves `latest`
+      # pinned to whichever version happened to be published without an
+      # explicit tag — `npx @nanocollective/sentinel` then installs a stale
+      # build. Keep `latest` on the newest prerelease until a stable version
+      # ships, at which point `npm publish --tag latest` claims it and this
+      # step stops firing.
+      - name: Keep latest on the newest prerelease
+        if: needs.check-version.outputs.is-prerelease == 'true'
+        run: |
+          HAS_STABLE=$(npm view @nanocollective/sentinel versions --json 2>/dev/null | node -e '
+            let raw = "";
+            process.stdin.on("data", d => (raw += d)).on("end", () => {
+              const parsed = raw.trim() ? JSON.parse(raw) : [];
+              const versions = Array.isArray(parsed) ? parsed : [parsed];
+              console.log(versions.some(v => !v.includes("-")) ? "yes" : "no");
+            });
+          ')
+          if [ "$HAS_STABLE" = "yes" ]; then
+            echo "ℹ️ A stable version exists — leaving the latest tag alone"
+          else
+            npm dist-tag add @nanocollective/sentinel@$VERSION latest
+            echo "✅ latest now points at $VERSION"
+          fi
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          VERSION: ${{ needs.check-version.outputs.package-version }}
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2

@@ -1,3 +1,18 @@
+# 0.1.0-alpha.3
+
+Release plumbing only — no changes to Sentinel itself.
+
+- **`npx @nanocollective/sentinel` installs the newest alpha.** Pre-1.0 releases
+  publish under the `alpha` tag and never claimed npm's `latest`, which was
+  still pinned to `0.1.0-alpha.0` — so the documented `npx` install fetched the
+  first alpha rather than the current one. The release workflow now moves
+  `latest` onto each new prerelease until a stable version ships and claims the
+  tag itself.
+- **Publish detection no longer trusts the `latest` tag.** The version check
+  reads the full published-versions list, so a lagging tag can no longer report
+  an already-published version as new, and the release notes link to the right
+  compare range.
+
 # 0.1.0-alpha.2
 
 Fixes from running the full audit loop live against a real repository. Several
