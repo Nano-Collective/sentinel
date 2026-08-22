@@ -159,6 +159,10 @@ test('filters out below-threshold findings before planning', async t => {
 	);
 	t.is(created.length, 0);
 	t.is(result.created.length, 0);
+	// Below-threshold is not suppression — it must not inflate either counter,
+	// which the run summary reports as suppression doing work.
+	t.is(result.suppressed, 0);
+	t.is(result.suppressedByOverride, 0);
 });
 
 test('increments the miss counter for an absent finding', async t => {

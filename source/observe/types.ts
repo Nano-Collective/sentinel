@@ -33,6 +33,9 @@ export type RunMode = 'live' | 'dry-run' | 'audit-only';
 export interface FilingSummary {
 	filed: number;
 	touched: number;
+	incremented: number;
+	suppressed: number;
+	suppressedByOverride: number;
 	resolved: number;
 }
 

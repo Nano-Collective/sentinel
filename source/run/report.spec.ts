@@ -1,6 +1,7 @@
 import test from 'ava';
+import type {ReconcileResult} from '../dedup/reconcile.js';
 import type {Finding} from '../findings/types.js';
-import {countFindings, renderReport} from './report.js';
+import {countFindings, renderFilingLine, renderReport} from './report.js';
 import type {PackOutcome, RunOutcome} from './types.js';
 
 console.log('\nrun/report.spec.ts');
@@ -32,6 +33,60 @@ function pack(overrides: Partial<PackOutcome> = {}): PackOutcome {
 		...overrides,
 	};
 }
+
+function result(overrides: Partial<ReconcileResult> = {}): ReconcileResult {
+	return {
+		targetRepo: 'org/a',
+		created: [],
+		touched: 0,
+		incremented: 0,
+		resolved: 0,
+		suppressed: 0,
+		suppressedByOverride: 0,
+		errors: [],
+		...overrides,
+	};
+}
+
+test('renders every filing counter in the per-repo line', t => {
+	t.is(
+		renderFilingLine(
+			'myorg/myrepo',
+			result({
+				created: [
+					{number: 1, url: 'u'},
+					{number: 2, url: 'v'},
+					{number: 3, url: 'w'},
+				],
+				touched: 5,
+				incremented: 2,
+				suppressed: 1,
+			}),
+		),
+		'myorg/myrepo: filed 3, touched 5, aged 2, suppressed 1, suppressed-by-override 0, resolved 0',
+	);
+});
+
+test('prints zeroed counters rather than omitting them', t => {
+	t.is(
+		renderFilingLine('org/a', result()),
+		'org/a: filed 0, touched 0, aged 0, suppressed 0, suppressed-by-override 0, resolved 0',
+	);
+});
+
+test('names the audited repo, not the issue target', t => {
+	const line = renderFilingLine(
+		'org/audited',
+		result({targetRepo: 'org/central'}),
+	);
+	t.true(line.startsWith('org/audited: '));
+	t.false(line.includes('org/central'));
+});
+
+test('the filing line omits tolerated errors', t => {
+	const line = renderFilingLine('org/a', result({errors: ['create: boom']}));
+	t.false(line.includes('boom'));
+});
 
 test('renders findings grouped by repo and pack', t => {
 	const run: RunOutcome = {

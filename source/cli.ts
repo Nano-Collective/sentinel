@@ -32,7 +32,7 @@ import {nanocoderRunner} from './orchestrator/nanocoder-runner.js';
 import {prepareRepo} from './run/clone.js';
 import {renderPreview} from './run/preview.js';
 import {ghRepoLister} from './run/repo-lister.js';
-import {renderReport} from './run/report.js';
+import {renderFilingLine, renderReport} from './run/report.js';
 import {runFromConfig, runLocal} from './run/run.js';
 import {fsPackLoader, fsRepoFiles} from './run/sources.js';
 
@@ -294,9 +294,7 @@ async function runRun(argv: string[]): Promise<number> {
 
 	if (report.filed) {
 		for (const {repo: repoName, result} of report.reconciled) {
-			console.log(
-				`${repoName}: filed ${result.created.length}, touched ${result.touched}, resolved ${result.resolved}`,
-			);
+			console.log(renderFilingLine(repoName, result));
 			for (const error of result.errors) {
 				console.error(`  ${repoName} — ${error}`);
 			}
