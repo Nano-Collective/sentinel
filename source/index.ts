@@ -166,7 +166,11 @@ export {
 	parseRepoList,
 	type RepoLister,
 } from './run/repo-lister.js';
-export {countFindings, renderReport} from './run/report.js';
+export {
+	countFindings,
+	renderFilingLine,
+	renderReport,
+} from './run/report.js';
 export {
 	type RunConfigOptions,
 	type RunDeps,

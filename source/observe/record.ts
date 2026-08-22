@@ -70,10 +70,20 @@ export function buildRunRecord(
 	};
 
 	if (report.filed) {
-		const filing: FilingSummary = {filed: 0, touched: 0, resolved: 0};
+		const filing: FilingSummary = {
+			filed: 0,
+			touched: 0,
+			incremented: 0,
+			suppressed: 0,
+			suppressedByOverride: 0,
+			resolved: 0,
+		};
 		for (const {result} of report.reconciled) {
 			filing.filed += result.created.length;
 			filing.touched += result.touched;
+			filing.incremented += result.incremented;
+			filing.suppressed += result.suppressed;
+			filing.suppressedByOverride += result.suppressedByOverride;
 			filing.resolved += result.resolved;
 		}
 		record.filing = filing;

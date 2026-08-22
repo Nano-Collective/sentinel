@@ -4,9 +4,18 @@
  * the config repo's GitHub Pages. Pure and tested.
  */
 
-import type {RunRecord} from './types.js';
+import type {FilingSummary, RunRecord} from './types.js';
 
 const MAX_ROWS = 60;
+
+const FILING_COLUMNS: [string, keyof FilingSummary][] = [
+	['Filed', 'filed'],
+	['Touched', 'touched'],
+	['Aged', 'incremented'],
+	['Suppressed', 'suppressed'],
+	['By override', 'suppressedByOverride'],
+	['Resolved', 'resolved'],
+];
 
 function escapeHtml(text: string): string {
 	return text
@@ -21,9 +30,15 @@ function severityCell(count: number, className: string): string {
 	return `<td class="sev ${className}">${shown}</td>`;
 }
 
+function filingCell(
+	filing: FilingSummary | undefined,
+	key: keyof FilingSummary,
+): string {
+	return `<td class="num">${filing ? filing[key] : '—'}</td>`;
+}
+
 function row(record: RunRecord): string {
 	const {bySeverity} = record.totals;
-	const filed = record.filing ? String(record.filing.filed) : '—';
 	return [
 		'<tr>',
 		`<td class="ts">${escapeHtml(record.timestamp)}</td>`,
@@ -34,7 +49,7 @@ function row(record: RunRecord): string {
 		severityCell(bySeverity.high, 'high'),
 		severityCell(bySeverity.medium, 'medium'),
 		severityCell(bySeverity.low, 'low'),
-		`<td class="num">${filed}</td>`,
+		...FILING_COLUMNS.map(([, key]) => filingCell(record.filing, key)),
 		'</tr>',
 	].join('');
 }
@@ -84,7 +99,8 @@ footer { margin-top: 1.5rem; color: #565f89; font-size: .8rem; }
 <table>
 <thead><tr>
 <th>Run</th><th>Mode</th><th>Repos</th><th>Findings</th>
-<th>Crit</th><th>High</th><th>Med</th><th>Low</th><th>Filed</th>
+<th>Crit</th><th>High</th><th>Med</th><th>Low</th>
+${FILING_COLUMNS.map(([label]) => `<th>${label}</th>`).join('')}
 </tr></thead>
 <tbody>
 ${rows}
