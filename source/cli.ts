@@ -3,8 +3,9 @@
 /**
  * Sentinel CLI entry point.
  *
- *   sentinel init   scaffold a configuration repo
- *   sentinel run    perform an audit pass (not yet implemented)
+ *   sentinel init      scaffold a configuration repo
+ *   sentinel run       perform an audit pass
+ *   sentinel estimate  size an audit before running it
  *
  * The init command's logic lives in ./init; this file is the interactive glue
  * (prompting, printing) and is excluded from coverage.
@@ -30,6 +31,7 @@ import {buildRunRecord, recordFilename} from './observe/record.js';
 import type {RunMode, RunRecord} from './observe/types.js';
 import {nanocoderRunner} from './orchestrator/nanocoder-runner.js';
 import {prepareRepo} from './run/clone.js';
+import {estimateRun, renderEstimate} from './run/estimate.js';
 import {renderPreview} from './run/preview.js';
 import {ghRepoLister} from './run/repo-lister.js';
 import {renderReport} from './run/report.js';
@@ -39,8 +41,9 @@ import {fsPackLoader, fsRepoFiles} from './run/sources.js';
 const USAGE = `sentinel <command>
 
 Commands:
-  init    Scaffold a Sentinel configuration into the current repository
-  run     Perform an audit pass against a rule pack and a repository
+  init      Scaffold a Sentinel configuration into the current repository
+  run       Perform an audit pass against a rule pack and a repository
+  estimate  Size an audit — requests, tokens, runtime — without running it
 
 Run 'sentinel <command> --help' for command-specific options.`;
 
@@ -186,20 +189,26 @@ function writeRunRecord(record: RunRecord, recordsDir: string): void {
 	console.log(`Wrote run record to ${path}`);
 }
 
-function writeDashboard(recordsDir: string, dashboardDir: string): void {
+function readRunRecords(recordsDir: string): RunRecord[] {
 	const records: RunRecord[] = [];
-	if (existsSync(recordsDir)) {
-		for (const name of readdirSync(recordsDir)) {
-			if (!name.endsWith('.json')) {
-				continue;
-			}
-			try {
-				records.push(JSON.parse(readFileSync(join(recordsDir, name), 'utf8')));
-			} catch {
-				// Skip a malformed record rather than fail the whole dashboard.
-			}
+	if (!existsSync(recordsDir)) {
+		return records;
+	}
+	for (const name of readdirSync(recordsDir)) {
+		if (!name.endsWith('.json')) {
+			continue;
+		}
+		try {
+			records.push(JSON.parse(readFileSync(join(recordsDir, name), 'utf8')));
+		} catch {
+			// Skip a malformed record rather than fail the whole read.
 		}
 	}
+	return records;
+}
+
+function writeDashboard(recordsDir: string, dashboardDir: string): void {
+	const records = readRunRecords(recordsDir);
 	mkdirSync(dashboardDir, {recursive: true});
 	const path = join(dashboardDir, 'index.html');
 	writeFileSync(path, renderDashboard(records));
@@ -326,6 +335,64 @@ async function runRun(argv: string[]): Promise<number> {
 	return 0;
 }
 
+const ESTIMATE_USAGE = `sentinel estimate [options]
+
+Size an audit before running it: repositories, rule packs, files, model
+requests, tokens, and wall-clock runtime. Runs no model, files nothing, and
+mutates nothing.
+
+Figures are calibrated from the committed run records when any exist, so they
+sharpen against your own hardware and model. Repos already checked out under
+the workspace are measured from their real files; pass --clone to check out the
+rest.
+
+Options:
+  --config <path>       Path to sentinel.yaml (default ./sentinel.yaml)
+  --packs-dir <path>    Rule packs directory (default ./rule-packs)
+  --workspace <path>    Where target repos are checked out (default .)
+  --records-dir <path>  Run records to calibrate from (default runs)
+  --clone               Check out any target repo not already present
+  --output <path>       Write the Markdown estimate here (default stdout)`;
+
+async function runEstimate(argv: string[]): Promise<number> {
+	if (argv.includes('--help') || argv.includes('-h')) {
+		console.log(ESTIMATE_USAGE);
+		return 0;
+	}
+	const flags = flagMap(argv);
+
+	const configPath = flagStr(flags, 'config') ?? 'sentinel.yaml';
+	const parsed = parseConfig(readFileSync(configPath, 'utf8'));
+	if (!parsed.valid || !parsed.config) {
+		for (const error of parsed.errors) {
+			console.error(`config error — ${error.field}: ${error.message}`);
+		}
+		return 1;
+	}
+
+	const estimate = await estimateRun(
+		parsed.config,
+		{
+			files: fsRepoFiles,
+			packs: fsPackLoader,
+			repoLister: ghRepoLister,
+			cloneRepo: flags.get('clone') === true ? prepareRepo : undefined,
+			records: readRunRecords(flagStr(flags, 'records-dir') ?? 'runs'),
+		},
+		{
+			workspaceDir: flagStr(flags, 'workspace') ?? '.',
+			packsDir:
+				flagStr(flags, 'packs-dir') ?? join(dirname(configPath), 'rule-packs'),
+		},
+	);
+
+	writeReport(renderEstimate(estimate), flagStr(flags, 'output'));
+	for (const error of estimate.targetErrors) {
+		console.error(`target: ${error}`);
+	}
+	return 0;
+}
+
 async function main(argv: string[]): Promise<number> {
 	const [command, ...rest] = argv;
 
@@ -334,6 +401,8 @@ async function main(argv: string[]): Promise<number> {
 			return runInit(rest);
 		case 'run':
 			return runRun(rest);
+		case 'estimate':
+			return runEstimate(rest);
 		case undefined:
 		case '--help':
 		case '-h':

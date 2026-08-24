@@ -20,7 +20,10 @@ function finding(severity: Finding['severity']): Finding {
 	};
 }
 
-function pack(findings: Finding[]): PackOutcome {
+function pack(
+	findings: Finding[],
+	overrides: Partial<PackOutcome> = {},
+): PackOutcome {
 	return {
 		pack: 'p',
 		version: '1.0.0',
@@ -28,6 +31,8 @@ function pack(findings: Finding[]): PackOutcome {
 		attempts: 1,
 		ok: true,
 		errors: [],
+		usage: {durationMs: 1000, promptTokens: 400, outputTokens: 50},
+		...overrides,
 	};
 }
 
@@ -105,6 +110,41 @@ test('carries target errors', t => {
 		'audit-only',
 	);
 	t.deepEqual(record.targetErrors, ['boom']);
+});
+
+test('totals the measured model usage across every pack pass', t => {
+	const r = report({
+		outcome: {
+			repos: [
+				repo('org/a', [
+					pack([], {
+						attempts: 2,
+						usage: {durationMs: 3000, promptTokens: 800, outputTokens: 90},
+					}),
+					pack([]),
+				]),
+				repo('org/b', [pack([])]),
+			],
+		},
+	});
+	const record = buildRunRecord(r, TS, 'audit-only');
+	// 2 attempts on the first pass, 1 on each of the others.
+	t.deepEqual(record.totals.usage, {
+		requests: 4,
+		durationMs: 5000,
+		promptTokens: 1600,
+		outputTokens: 190,
+	});
+});
+
+test('records zeroed usage when nothing was audited', t => {
+	const record = buildRunRecord(report(), TS, 'dry-run');
+	t.deepEqual(record.totals.usage, {
+		requests: 0,
+		durationMs: 0,
+		promptTokens: 0,
+		outputTokens: 0,
+	});
 });
 
 test('recordFilename is filesystem-safe', t => {

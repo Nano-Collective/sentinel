@@ -58,6 +58,36 @@ test('produces a PackOutcome with findings from the model', async t => {
 	t.true(r.prompt?.includes('src/a.ts'));
 });
 
+test('measures the pass so estimates have something to calibrate on', async t => {
+	const outcome = await auditPack(
+		PACK,
+		{repoName: 'org/a', files: [{path: 'src/a.ts', content: 'const x = 1;'}]},
+		MODEL,
+		runner({ok: true, output: JSON.stringify([FINDING])}),
+	);
+	t.true(outcome.usage.durationMs >= 0);
+	t.true(outcome.usage.promptTokens > 0);
+	t.true(outcome.usage.outputTokens > 0);
+});
+
+test('counts the prompt once per attempt', async t => {
+	// Malformed output the auto-fix loop retries, so two attempts are made.
+	const single = await auditPack(
+		PACK,
+		{repoName: 'org/a', files: []},
+		MODEL,
+		runner({ok: true, output: JSON.stringify([FINDING])}),
+	);
+	const retried = await auditPack(
+		PACK,
+		{repoName: 'org/a', files: []},
+		MODEL,
+		runner({ok: true, output: 'not json'}),
+	);
+	t.is(retried.attempts, 2);
+	t.is(retried.usage.promptTokens, single.usage.promptTokens * 2);
+});
+
 test('surfaces a run error in the outcome', async t => {
 	const outcome = await auditPack(
 		PACK,

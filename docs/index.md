@@ -41,7 +41,7 @@ npx @nanocollective/sentinel init
 - [Configuration](configuration/index.md) — The `sentinel.yaml` reference
 - [Workflow](workflow/index.md) — The scheduled audit, run modes, and the execution model
 - [Findings & Issues](findings/index.md) — The severity model, issue filing, dedup, and suppression
-- [CLI](cli/index.md) — `init` and `run` command reference
+- [CLI](cli/index.md) — `init`, `run`, and `estimate` command reference
 - [Community](community.md) — Get involved
 
 > Sentinel is in active development toward its v1. These docs describe the v1 design settled in the [Sentinel whitepaper](/collective/whitepapers/sentinel). Where a feature is planned rather than shipped, the docs say so.

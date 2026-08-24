@@ -103,6 +103,7 @@ export type {
 	RepoRunRecord,
 	RunMode,
 	RunRecord,
+	RunUsage,
 	SeverityCounts,
 } from './observe/types.js';
 export {runAudit} from './orchestrator/audit.js';
@@ -149,6 +150,17 @@ export {
 	prepareRepo,
 } from './run/clone.js';
 export {
+	type AuditEstimate,
+	type Calibration,
+	calibrate,
+	type EstimateDeps,
+	type EstimateOptions,
+	estimateRun,
+	estimateTokens,
+	type RepoEstimate,
+	renderEstimate,
+} from './run/estimate.js';
+export {
 	type ExpandResult,
 	expandTargets,
 	type ResolvedRepoTarget,
@@ -175,13 +187,19 @@ export {
 	runFromConfig,
 	runLocal,
 } from './run/run.js';
-export {isEnabledPackPath, unionPatterns} from './run/select.js';
+export {
+	isEnabledPackPath,
+	type SelectedPacks,
+	selectPacks,
+	unionPatterns,
+} from './run/select.js';
 export {fsPackLoader, fsRepoFiles} from './run/sources.js';
 export type {
 	LoadedPacks,
 	PackLoadError,
 	PackLoader,
 	PackOutcome,
+	PackUsage,
 	RepoFiles,
 	RepoOutcome,
 	RunOutcome,
