@@ -99,6 +99,46 @@ test('rejects an inverted line range', t => {
 	t.true(result.errors.some(e => e.field === 'line_range'));
 });
 
+// A model that hallucinates a line number tends to emit one of these. They all
+// slip past a bare `typeof === 'number'` gate, and a finding carrying one
+// renders a `file:start` reference in the issue body that points nowhere.
+const BAD_LINE_NUMBERS: Array<[string, unknown]> = [
+	['Infinity', Number.POSITIVE_INFINITY],
+	['-Infinity', Number.NEGATIVE_INFINITY],
+	['NaN', Number.NaN],
+	['1e20', 1e20],
+	['-0', -0],
+	['1.5', 1.5],
+	['a numeric string', '42'],
+];
+
+for (const [label, value] of BAD_LINE_NUMBERS) {
+	test(`rejects a line range of ${label}`, t => {
+		const result = validateFindings([
+			validFinding({line_range: {start: value, end: value}}),
+		]);
+		t.false(result.valid);
+		t.true(result.errors.some(e => e.field === 'line_range'));
+		t.is(result.findings.length, 0);
+	});
+}
+
+test('accepts a line range sitting on the upper bound', t => {
+	const result = validateFindings([
+		validFinding({line_range: {start: 1, end: 10_000_000}}),
+	]);
+	t.true(result.valid);
+	t.is(result.findings.length, 1);
+});
+
+test('rejects a line range one past the upper bound', t => {
+	const result = validateFindings([
+		validFinding({line_range: {start: 1, end: 10_000_001}}),
+	]);
+	t.false(result.valid);
+	t.true(result.errors.some(e => e.field === 'line_range'));
+});
+
 test('rejects an invalid confidence value', t => {
 	const result = validateFindings([validFinding({confidence: 'certain'})]);
 	t.false(result.valid);
