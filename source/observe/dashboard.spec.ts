@@ -128,6 +128,30 @@ test('every filing column dashes out on a run that filed nothing', t => {
 	t.deepEqual(cells.slice(-6), ['—', '—', '—', '—', '—', '—']);
 });
 
+test('a record written before the new counters existed dashes them out', t => {
+	// Records committed by alpha.0-alpha.3 carry only {filed, touched, resolved}
+	// and there is no migration on the read path: writeDashboard JSON.parses
+	// straight into a RunRecord. The cast is a lie at the JSON boundary, so the
+	// three new cells must fall back rather than render "undefined".
+	const legacy = {filed: 5, touched: 0, resolved: 0} as FilingSummary;
+	const html = renderDashboard([record({filing: legacy})]);
+	t.false(html.includes('undefined'));
+	t.deepEqual(numCells(html).slice(-6), ['5', '0', '—', '—', '—', '0']);
+
+	// Same shape with non-zero survivors, so a fallback that swallowed every
+	// cell (or a 0/undefined mix-up) cannot pass the assertion above.
+	const busy = {filed: 5, touched: 2, resolved: 1} as FilingSummary;
+	const busyHtml = renderDashboard([record({filing: busy})]);
+	t.false(busyHtml.includes('undefined'));
+	t.deepEqual(numCells(busyHtml).slice(-6), ['5', '2', '—', '—', '—', '1']);
+});
+
+test('the table can scroll horizontally on a narrow viewport', t => {
+	const html = renderDashboard([record()]);
+	t.true(html.includes('overflow-x: auto'));
+	t.true(html.includes('<div class="scroll">'));
+});
+
 test('escapes HTML in record fields', t => {
 	const html = renderDashboard([
 		record({timestamp: '<script>alert(1)</script>'}),
