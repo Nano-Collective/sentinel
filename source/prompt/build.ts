@@ -6,7 +6,7 @@
  * {@link ../findings/validate.js validator} accepts.
  */
 
-import {CONFIDENCES, SEVERITIES} from '../findings/types.js';
+import {CONFIDENCES, MAX_LINE, SEVERITIES} from '../findings/types.js';
 import {matchesAppliesTo} from '../rule-packs/glob.js';
 import type {PromptInput, PromptResult, SourceFile} from './types.js';
 
@@ -40,7 +40,7 @@ function reportingContract(packName: string, category: string): string {
 		'',
 		`- "rule": string — the pack rule that fired, prefixed with the pack name (e.g. "${packName}/<pattern>")`,
 		'- "file": string — the repository-relative path of the affected file',
-		'- "line_range": object — {"start": <number>, "end": <number>}, 1-indexed and inclusive',
+		`- "line_range": object — {"start": <integer>, "end": <integer>}, 1-indexed and inclusive, with 1 <= start <= end <= ${MAX_LINE}`,
 		`- "category": string — the finding category (e.g. "${category || packName}")`,
 		`- "severity": string — one of ${quotedList(SEVERITIES)}`,
 		`- "confidence": string — one of ${quotedList(CONFIDENCES)}`,

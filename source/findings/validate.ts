@@ -17,6 +17,7 @@ import {
 	isConfidence,
 	isSeverity,
 	type LineRange,
+	MAX_LINE,
 	type Severity,
 } from './types.js';
 
@@ -51,12 +52,6 @@ function isNonEmptyString(value: unknown): value is string {
 function isInteger(value: unknown): value is number {
 	return Number.isInteger(value);
 }
-
-/**
- * The ceiling on a cited line number. No real source file comes close, so a
- * value above it is a hallucinated number rather than a location.
- */
-const MAX_LINE = 10_000_000;
 
 function validateLineRange(
 	value: unknown,

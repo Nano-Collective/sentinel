@@ -1,5 +1,6 @@
 import test from 'ava';
-import {validateFindings} from './validate.js';
+import {MAX_LINE} from './types.js';
+import {type ValidationError, validateFindings} from './validate.js';
 
 console.log('\nfindings/validate.spec.ts');
 
@@ -102,30 +103,63 @@ test('rejects an inverted line range', t => {
 // A model that hallucinates a line number tends to emit one of these. They all
 // slip past a bare `typeof === 'number'` gate, and a finding carrying one
 // renders a `file:start` reference in the issue body that points nowhere.
-const BAD_LINE_NUMBERS: Array<[string, unknown]> = [
+//
+// The cases are split by the gate that actually rejects them, and each asserts
+// on the message rather than just the field: a value that drifts to the other
+// gate then fails loudly instead of passing for the wrong reason.
+
+/** Rejected by the `Number.isInteger` gate. */
+const NON_INTEGER_LINE_NUMBERS: Array<[string, unknown]> = [
 	['Infinity', Number.POSITIVE_INFINITY],
 	['-Infinity', Number.NEGATIVE_INFINITY],
 	['NaN', Number.NaN],
-	['1e20', 1e20],
-	['-0', -0],
 	['1.5', 1.5],
+	// Not from the issue: a guard on dropping the old `typeof` gate, which is
+	// the one thing that kept strings out.
 	['a numeric string', '42'],
 ];
 
-for (const [label, value] of BAD_LINE_NUMBERS) {
-	test(`rejects a line range of ${label}`, t => {
+/**
+ * Integral, so past the integer gate; rejected instead by the bound
+ * 1 <= start <= end <= MAX_LINE.
+ */
+const OUT_OF_RANGE_LINE_NUMBERS: Array<[string, unknown]> = [
+	// Number.isInteger(-0) is true, so only the lower bound catches it.
+	['-0', -0],
+	['1e20', 1e20],
+];
+
+function lineRangeMessage(errors: ValidationError[]): string {
+	return errors.find(e => e.field === 'line_range')?.message ?? '';
+}
+
+for (const [label, value] of NON_INTEGER_LINE_NUMBERS) {
+	test(`rejects a line range of ${label} as a non-integer`, t => {
 		const result = validateFindings([
 			validFinding({line_range: {start: value, end: value}}),
 		]);
 		t.false(result.valid);
-		t.true(result.errors.some(e => e.field === 'line_range'));
 		t.is(result.findings.length, 0);
+		t.true(lineRangeMessage(result.errors).includes('must both be integers'));
 	});
 }
 
+for (const [label, value] of OUT_OF_RANGE_LINE_NUMBERS) {
+	test(`rejects a line range of ${label} as out of range`, t => {
+		const result = validateFindings([
+			validFinding({line_range: {start: value, end: value}}),
+		]);
+		t.false(result.valid);
+		t.is(result.findings.length, 0);
+		t.true(lineRangeMessage(result.errors).includes('must satisfy'));
+	});
+}
+
+// MAX_LINE is imported rather than written out so retuning the constant cannot
+// leave this pair passing while no longer straddling the boundary.
 test('accepts a line range sitting on the upper bound', t => {
 	const result = validateFindings([
-		validFinding({line_range: {start: 1, end: 10_000_000}}),
+		validFinding({line_range: {start: 1, end: MAX_LINE}}),
 	]);
 	t.true(result.valid);
 	t.is(result.findings.length, 1);
@@ -133,10 +167,10 @@ test('accepts a line range sitting on the upper bound', t => {
 
 test('rejects a line range one past the upper bound', t => {
 	const result = validateFindings([
-		validFinding({line_range: {start: 1, end: 10_000_001}}),
+		validFinding({line_range: {start: 1, end: MAX_LINE + 1}}),
 	]);
 	t.false(result.valid);
-	t.true(result.errors.some(e => e.field === 'line_range'));
+	t.true(lineRangeMessage(result.errors).includes('must satisfy'));
 });
 
 test('rejects an invalid confidence value', t => {
