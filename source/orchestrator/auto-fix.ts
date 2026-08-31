@@ -22,6 +22,15 @@ export interface AutoFixOptions extends RunnerOptions {
 export interface AutoFixResult extends AuditResult {
 	/** Number of model runs performed (1 = succeeded or failed on first try). */
 	attempts: number;
+	/**
+	 * Characters sent across every attempt. A retry resends the audit prompt plus
+	 * a correction section, so this is the real total rather than a multiple of
+	 * the first prompt. Carried as characters, not tokens, to keep the token
+	 * approximation in one place ({@link ../run/estimate.js estimateTokens}).
+	 */
+	promptChars: number;
+	/** Characters returned across every attempt, the discarded ones included. */
+	outputChars: number;
 }
 
 function formatErrors(errors: ValidationError[]): string {
@@ -83,12 +92,16 @@ export async function runAuditWithAutoFix(
 
 	let result = await runAudit(prompt, model, runner, options);
 	let attempts = 1;
+	let promptChars = prompt.length;
+	let outputChars = result.raw.length;
 
 	while (!result.ok && !result.runError && attempts < maxAttempts) {
 		const fixPrompt = buildAutoFixPrompt(prompt, result);
 		result = await runAudit(fixPrompt, model, runner, options);
 		attempts++;
+		promptChars += fixPrompt.length;
+		outputChars += result.raw.length;
 	}
 
-	return {...result, attempts};
+	return {...result, attempts, promptChars, outputChars};
 }

@@ -6,6 +6,7 @@ import type {RulePack} from '../rule-packs/types.js';
 import type {PrepareResult} from './clone.js';
 import {
 	type AuditEstimate,
+	type Calibration,
 	calibrate,
 	estimateRun,
 	estimateTokens,
@@ -116,6 +117,11 @@ test('calibrate falls back to built-in figures without records', t => {
 	t.true(calibration.outputTokensPerRequest > 0);
 });
 
+/** What one request costs at a given prompt size under a calibration. */
+function msAt(calibration: Calibration, promptTokens: number): number {
+	return calibration.msPerRequest + calibration.msPerPromptToken * promptTokens;
+}
+
 test('calibrate derives per-request figures from recorded usage', t => {
 	const calibration = calibrate([
 		record(
@@ -124,9 +130,52 @@ test('calibrate derives per-request figures from recorded usage', t => {
 		),
 	]);
 	t.is(calibration.samples, 1);
-	t.is(calibration.msPerRequest, 10_000);
 	t.is(calibration.outputTokensPerRequest, 200);
 	t.is(calibration.requestsPerPass, 1);
+	// One record cannot separate fixed from per-token cost, so the split is
+	// assumed — but it must still reproduce the 10s/request actually measured
+	// at the 2,000 prompt tokens/request that record carried.
+	t.is(msAt(calibration, 2000), 10_000);
+	t.true(calibration.msPerRequest > 0);
+	t.true(calibration.msPerPromptToken > 0);
+});
+
+test('calibrate separates fixed from per-token cost across differing sizes', t => {
+	// 20s of fixed cost plus 10ms per prompt token, measured at two sizes.
+	const small = record(
+		{requests: 1, durationMs: 30_000, promptTokens: 1000, outputTokens: 100},
+		1,
+	);
+	small.timestamp = '2026-07-20T06:00:00.000Z';
+	const large = record(
+		{requests: 1, durationMs: 120_000, promptTokens: 10_000, outputTokens: 100},
+		1,
+	);
+	const calibration = calibrate([large, small]);
+	t.is(calibration.samples, 2);
+	t.is(Math.round(calibration.msPerRequest), 20_000);
+	t.is(Math.round(calibration.msPerPromptToken), 10);
+	// And it reproduces both observations it was fitted from.
+	t.is(Math.round(msAt(calibration, 1000)), 30_000);
+	t.is(Math.round(msAt(calibration, 10_000)), 120_000);
+});
+
+test('calibrate falls back to a split when the fit would go negative', t => {
+	// A bigger prompt that ran faster — noise, not a real negative rate.
+	const fast = record(
+		{requests: 1, durationMs: 5000, promptTokens: 10_000, outputTokens: 100},
+		1,
+	);
+	fast.timestamp = '2026-07-20T06:00:00.000Z';
+	const slow = record(
+		{requests: 1, durationMs: 60_000, promptTokens: 1000, outputTokens: 100},
+		1,
+	);
+	const calibration = calibrate([slow, fast]);
+	t.true(calibration.msPerRequest >= 0);
+	t.true(calibration.msPerPromptToken >= 0);
+	// Pooled average preserved: 32.5s per request at 5,500 prompt tokens.
+	t.is(Math.round(msAt(calibration, 5500)), 32_500);
 });
 
 test('calibrate reflects auto-fix retries in requests per pass', t => {
@@ -160,8 +209,10 @@ test('calibrate averages the most recent records', t => {
 	);
 	const calibration = calibrate([newer, older]);
 	t.is(calibration.samples, 2);
-	t.is(calibration.msPerRequest, 20_000);
 	t.is(calibration.outputTokensPerRequest, 200);
+	// Both records are the same prompt size, so the terms cannot be separated
+	// and the pooled 20s/request average is split instead.
+	t.is(msAt(calibration, 100), 20_000);
 });
 
 test('calibrate never reports fewer than one request per pass', t => {
@@ -194,7 +245,7 @@ test('calibrate keeps the default retry rate when a record has no passes', t => 
 			0,
 		),
 	]);
-	t.is(calibration.msPerRequest, 2000);
+	t.is(msAt(calibration, 100), 2000);
 	t.is(calibration.requestsPerPass, calibrate([]).requestsPerPass);
 });
 
@@ -371,6 +422,53 @@ test('skips a repo that could not be checked out', async t => {
 	t.true(estimate.targetErrors[0]?.includes('no such repo'));
 });
 
+test('runtime scales with prompt size, not just request count', async t => {
+	// Calibrated on a small config, then asked to size a much larger one. The
+	// request count is identical, so a flat per-request average would report the
+	// same runtime for both — the failure this term exists to prevent.
+	const records = [
+		record(
+			{requests: 1, durationMs: 30_000, promptTokens: 1000, outputTokens: 100},
+			1,
+		),
+	];
+	const line = 'const x: number = 1;\n';
+	const small = await estimateRun(
+		config(),
+		{
+			files: repoFiles([{path: 'src/a.ts', content: line}]),
+			packs: packLoader({packs: [pack('p')], errors: []}),
+			records,
+		},
+		OPTIONS,
+	);
+	const large = await estimateRun(
+		config(),
+		{
+			files: repoFiles([{path: 'src/a.ts', content: line.repeat(5000)}]),
+			packs: packLoader({packs: [pack('p')], errors: []}),
+			records,
+		},
+		OPTIONS,
+	);
+
+	t.is(small.totals.requests, large.totals.requests);
+	t.true(large.totals.tokens > small.totals.tokens * 10);
+	t.true(large.totals.durationMs > small.totals.durationMs * 5);
+});
+
+test('an uncalibrated estimate still scales with prompt size', async t => {
+	// The built-in defaults carry the per-token term too, so the first estimate
+	// an install ever runs is not prompt-size-blind either.
+	const line = 'const x: number = 1;\n';
+	const small = await estimateOf({}, [{path: 'src/a.ts', content: line}]);
+	const large = await estimateOf({}, [
+		{path: 'src/a.ts', content: line.repeat(5000)},
+	]);
+	t.is(small.calibration.samples, 0);
+	t.true(large.totals.durationMs > small.totals.durationMs * 5);
+});
+
 test('uses recorded usage instead of the built-in defaults', async t => {
 	const deps = {
 		files: repoFiles(FILES),
@@ -396,8 +494,8 @@ test('uses recorded usage instead of the built-in defaults', async t => {
 		OPTIONS,
 	);
 	t.is(calibrated.calibration.samples, 1);
-	t.is(calibrated.totals.durationMs, 5000);
 	t.not(calibrated.totals.durationMs, uncalibrated.totals.durationMs);
+	t.true(calibrated.totals.durationMs > 0);
 });
 
 test('a repo audited by two targets is counted once', async t => {
@@ -524,6 +622,7 @@ test('renders seconds, minutes, and hours as an operator reads them', t => {
 			},
 			calibration: {
 				msPerRequest: 0,
+				msPerPromptToken: 0,
 				requestsPerPass: 1,
 				outputTokensPerRequest: 0,
 				samples: 1,
@@ -535,16 +634,34 @@ test('renders seconds, minutes, and hours as an operator reads them', t => {
 	t.true(of(45_000, 800).includes('~800'));
 	t.true(of(20 * 60_000, 41_200).includes('~20 minute(s)'));
 	t.true(of(20 * 60_000, 41_200).includes('~41.2K'));
+	// Handover at 60s, not 90s: rounding minutes from 89s gave "1 minute(s)"
+	// no window at all, so the output jumped 89 second(s) -> 2 minute(s).
+	t.true(of(59_000, 0).includes('~59 second(s)'));
+	t.true(of(60_000, 0).includes('~1 minute(s)'));
+	t.true(of(89_000, 0).includes('~1 minute(s)'));
 	t.true(of(3 * 3_600_000, 0).includes('~3 hour(s)'));
 	t.true(
 		of(2 * 3_600_000 + 30 * 60_000, 0).includes('~2 hour(s) 30 minute(s)'),
 	);
 });
 
-test('warns when a repo contributed no files', async t => {
+test('warns when a repo is not checked out', async t => {
 	const markdown = renderEstimate(await estimateOf({}, []));
-	t.true(markdown.includes('contributed no files'));
+	t.true(markdown.includes('are not checked out'));
 	t.true(markdown.includes('--clone'));
+});
+
+test('a checked-out repo that matches no file is not told to clone', async t => {
+	// Present on disk, but the pack scopes to src/**/*.ts and none of it is.
+	const estimate = await estimateOf({}, [
+		{path: 'README.md', content: '# nothing to audit'},
+	]);
+	t.is(estimate.repos[0]?.files, 0);
+	t.is(estimate.repos[0]?.filesPresent, 1);
+
+	const markdown = renderEstimate(estimate);
+	t.true(markdown.includes('no file matched'));
+	t.false(markdown.includes('--clone'));
 });
 
 test('warns about missing packs, unparseable packs, and target errors', t => {
@@ -554,6 +671,7 @@ test('warns about missing packs, unparseable packs, and target errors', t => {
 				repo: 'my-org/a',
 				packs: ['p'],
 				files: 3,
+				filesPresent: 3,
 				requests: 1,
 				tokens: 100,
 				durationMs: 1000,
@@ -588,4 +706,35 @@ test('says so when no repositories resolved', async t => {
 	const markdown = renderEstimate(estimate);
 	t.true(markdown.includes('No repositories resolved'));
 	t.false(markdown.includes('| Repository |'));
+});
+
+test('calibrate survives a record with no prompt tokens', async t => {
+	// A legacy or truncated record: requests and duration, but no token counts.
+	// The per-token term has nothing to divide by, so all of the measured cost
+	// stays fixed rather than becoming NaN and poisoning every figure.
+	const calibration = calibrate([
+		record(
+			{requests: 2, durationMs: 8000, promptTokens: 0, outputTokens: 0},
+			2,
+		),
+	]);
+	t.is(calibration.msPerRequest, 4000);
+	t.is(calibration.msPerPromptToken, 0);
+
+	const estimate = await estimateRun(
+		config(),
+		{
+			files: repoFiles(FILES),
+			packs: packLoader({packs: [pack('p')], errors: []}),
+			records: [
+				record(
+					{requests: 2, durationMs: 8000, promptTokens: 0, outputTokens: 0},
+					2,
+				),
+			],
+		},
+		OPTIONS,
+	);
+	t.true(Number.isFinite(estimate.totals.durationMs));
+	t.true(estimate.totals.durationMs > 0);
 });

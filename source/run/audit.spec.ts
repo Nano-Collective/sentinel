@@ -3,6 +3,7 @@ import type {ModelConfig} from '../config/types.js';
 import type {ModelRunner, ModelRunResult} from '../orchestrator/types.js';
 import type {RulePack} from '../rule-packs/types.js';
 import {auditPack} from './audit.js';
+import {estimateTokens} from './estimate.js';
 
 console.log('\nrun/audit.spec.ts');
 
@@ -70,22 +71,44 @@ test('measures the pass so estimates have something to calibrate on', async t =>
 	t.true(outcome.usage.outputTokens > 0);
 });
 
-test('counts the prompt once per attempt', async t => {
-	// Malformed output the auto-fix loop retries, so two attempts are made.
-	const single = await auditPack(
+test('counts every attempt on both the prompt and the output side', async t => {
+	// The same malformed output, run once and then with the retry allowed, so
+	// the only difference between the two is the second attempt.
+	const context = {repoName: 'org/a', files: []};
+	const once = await auditPack(
+		PACK,
+		context,
+		MODEL,
+		runner({ok: true, output: 'not json'}),
+		{maxAttempts: 1},
+	);
+	const retried = await auditPack(
+		PACK,
+		context,
+		MODEL,
+		runner({ok: true, output: 'not json'}),
+	);
+
+	t.is(once.attempts, 1);
+	t.is(retried.attempts, 2);
+	// The discarded first response still cost tokens to generate. Counting only
+	// the final attempt understated output, and since calibration divides by a
+	// request count that includes retries, it dragged every estimate down.
+	t.is(retried.usage.outputTokens, once.usage.outputTokens * 2);
+	// The retry resends the prompt plus a correction section, so the prompt side
+	// is more than twice the first attempt rather than exactly twice.
+	t.true(retried.usage.promptTokens > once.usage.promptTokens * 2);
+});
+
+test('a pass that never retries counts one prompt and one response', async t => {
+	const outcome = await auditPack(
 		PACK,
 		{repoName: 'org/a', files: []},
 		MODEL,
 		runner({ok: true, output: JSON.stringify([FINDING])}),
 	);
-	const retried = await auditPack(
-		PACK,
-		{repoName: 'org/a', files: []},
-		MODEL,
-		runner({ok: true, output: 'not json'}),
-	);
-	t.is(retried.attempts, 2);
-	t.is(retried.usage.promptTokens, single.usage.promptTokens * 2);
+	t.is(outcome.attempts, 1);
+	t.is(outcome.usage.outputTokens, estimateTokens(JSON.stringify([FINDING])));
 });
 
 test('surfaces a run error in the outcome', async t => {

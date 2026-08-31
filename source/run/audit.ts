@@ -14,7 +14,7 @@ import type {ModelRunner} from '../orchestrator/types.js';
 import {buildAuditPrompt} from '../prompt/build.js';
 import type {SourceFile} from '../prompt/types.js';
 import type {RulePack} from '../rule-packs/types.js';
-import {estimateTokens} from './estimate.js';
+import {tokensFromChars} from './estimate.js';
 import type {PackOutcome} from './types.js';
 
 /** The repository material one pack pass audits. */
@@ -56,10 +56,12 @@ export async function auditPack(
 		raw: result.raw,
 		usage: {
 			durationMs,
-			// A retry resends the audit prompt; the correction preamble is small
-			// beside it, so attempts x the base prompt is a fair figure.
-			promptTokens: estimateTokens(prompt) * result.attempts,
-			outputTokens: estimateTokens(result.raw),
+			// Both sides are the real totals across every attempt, not the final
+			// one scaled up: a retry resends the prompt plus a correction section,
+			// and the output it discards still cost tokens to generate. Counting
+			// them keeps calibration honest, since requests includes retries too.
+			promptTokens: tokensFromChars(result.promptChars),
+			outputTokens: tokensFromChars(result.outputChars),
 		},
 	};
 }

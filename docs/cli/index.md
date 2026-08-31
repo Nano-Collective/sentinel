@@ -60,7 +60,7 @@ The same validator, dedup logic, and findings model apply in both contexts, so w
 
 ## `estimate`
 
-Sizes an audit **before** it runs: how many repositories and rule packs are in scope, how many files they put in front of the model, and roughly how many model requests, tokens, and minutes that costs. It runs no model, files nothing, and mutates nothing — useful when you are about to point Sentinel at a dozen more repositories, or adding a pack to every target and want to know what that does to the nightly window.
+Sizes an audit **before** it runs: how many repositories and rule packs are in scope, how many files they put in front of the model, and roughly how many model requests, tokens, and minutes that costs. It runs no model and files no issues — `--clone` is the one flag that writes anything, checking out missing repos. Useful when you are about to point Sentinel at a dozen more repositories, or adding a pack to every target and want to know what that does to the nightly window.
 
 ```bash
 npx @nanocollective/sentinel estimate
@@ -90,8 +90,10 @@ Calibrated from the last 6 run record(s).
 
 ### How the figures are produced
 
-The token figure is **measured, not guessed**: `estimate` assembles the same prompts the audit would send — the pack body, the reporting contract, and the source files scoped by each pack's `applies_to.paths` — and counts them. What varies between installs is the per-request cost, so the request, token, and runtime figures are calibrated from the run records the last ten runs committed. Every run is instrumented for this: it records how long each pack pass took, how many model requests it made (auto-fix retries included), and the tokens it sent and received.
+The token figure is **measured, not guessed**: `estimate` assembles the same prompts the audit would send — the pack body, the reporting contract, and the source files scoped by each pack's `applies_to.paths` — and counts them. What varies between installs is the per-request cost, so the request, token, and runtime figures are calibrated from the run records the last ten runs committed. Every run is instrumented for this: it records how long each pack pass took, how many model requests it made (auto-fix retries included), and the tokens it sent and received across every attempt — an auto-fix retry resends the prompt and generates a second response, and both are counted.
+
+Runtime is **not** a flat per-request average. A request costs a fixed amount regardless of size plus an amount that tracks prompt size, and both terms are fitted from the records, so sizing a config far larger than anything you have run is not priced as though the prompts stayed the same. When the records cannot separate the two — a single run, or every run the same size — the measured average is split using the proportion the built-in defaults imply.
 
 Until a run has been recorded, the figures fall back to built-in defaults, and the output says so. Treat a first, uncalibrated estimate as an order of magnitude rather than a number to schedule against.
 
-Repositories already checked out under `--workspace` are measured from their real files. Any that are not are counted with zero files and called out in the output, so a partial estimate never reads as the whole picture — pass `--clone` to check the rest out first.
+Repositories already checked out under `--workspace` are measured from their real files. Any that are not are counted with zero files and called out in the output, so a partial estimate never reads as the whole picture — pass `--clone` to check the rest out first. A repo that *is* checked out but whose files no pack matches gets a separate warning: nothing needs cloning, but a pack is pointed at a repository it cannot see.

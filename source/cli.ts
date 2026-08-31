@@ -338,8 +338,8 @@ async function runRun(argv: string[]): Promise<number> {
 const ESTIMATE_USAGE = `sentinel estimate [options]
 
 Size an audit before running it: repositories, rule packs, files, model
-requests, tokens, and wall-clock runtime. Runs no model, files nothing, and
-mutates nothing.
+requests, tokens, and wall-clock runtime. Runs no model and files no issues;
+--clone is the one flag that writes anything, checking out missing repos.
 
 Figures are calibrated from the committed run records when any exist, so they
 sharpen against your own hardware and model. Repos already checked out under
@@ -386,10 +386,17 @@ async function runEstimate(argv: string[]): Promise<number> {
 		},
 	);
 
-	writeReport(renderEstimate(estimate), flagStr(flags, 'output'));
-	for (const error of estimate.targetErrors) {
-		console.error(`target: ${error}`);
+	const output = flagStr(flags, 'output');
+	writeReport(renderEstimate(estimate), output);
+	// The estimate already renders these as caveats, so repeat them on stderr
+	// only when the report went to a file and nobody would otherwise see them.
+	if (output) {
+		for (const error of estimate.targetErrors) {
+			console.error(`target: ${error}`);
+		}
 	}
+	// Deliberately 0 even when targets failed: estimate is advisory, and a
+	// partial estimate is still useful — the caveats say what is missing.
 	return 0;
 }
 

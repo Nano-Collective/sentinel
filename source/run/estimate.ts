@@ -28,8 +28,17 @@ const CALIBRATION_WINDOW = 10;
 
 /** The per-request figures an estimate is built from. */
 export interface Calibration {
-	/** Wall-clock milliseconds one model request takes. */
+	/**
+	 * Fixed wall-clock milliseconds a request costs regardless of size — process
+	 * start, model load, the round trip.
+	 */
 	msPerRequest: number;
+	/**
+	 * Marginal milliseconds per prompt token. Runtime is dominated by prompt size
+	 * on a local model, so an estimate for a config far larger than the recorded
+	 * ones would be wrong by roughly that ratio without this term.
+	 */
+	msPerPromptToken: number;
 	/** Requests per pack pass — above 1 when auto-fix retries are common. */
 	requestsPerPass: number;
 	/** Tokens the model returns per request. */
@@ -40,10 +49,13 @@ export interface Calibration {
 
 /**
  * Used until a run has been recorded: a minute-ish per request on a local
- * model, and roughly one pass in ten needing the auto-fix retry.
+ * model, and roughly one pass in ten needing the auto-fix retry. The two
+ * duration terms sum to that 45s at a 2,500-token prompt — a typical single
+ * pack pass — and diverge from it as prompts get larger or smaller.
  */
 const DEFAULT_CALIBRATION: Calibration = {
-	msPerRequest: 45_000,
+	msPerRequest: 20_000,
+	msPerPromptToken: 10,
 	requestsPerPass: 1.1,
 	outputTokensPerRequest: 700,
 	samples: 0,
@@ -56,6 +68,12 @@ export interface RepoEstimate {
 	packs: string[];
 	/** Distinct files at least one pack will send to the model. */
 	files: number;
+	/**
+	 * Files found in the checkout before `applies_to` scoping. Zero means the
+	 * repo is not checked out; non-zero with `files` at zero means it is present
+	 * but no pack matches anything in it.
+	 */
+	filesPresent: number;
 	/** Model requests, retries included. */
 	requests: number;
 	tokens: number;
@@ -104,7 +122,83 @@ export interface EstimateOptions {
 
 /** Approximate the token count of a piece of prompt or completion text. */
 export function estimateTokens(text: string): number {
-	return Math.ceil(text.length / CHARS_PER_TOKEN);
+	return tokensFromChars(text.length);
+}
+
+/**
+ * The same approximation for a character count already accumulated — the audit
+ * loop totals characters across retries rather than holding every prompt.
+ */
+export function tokensFromChars(chars: number): number {
+	return Math.ceil(chars / CHARS_PER_TOKEN);
+}
+
+/** One record reduced to per-request cost against per-request prompt size. */
+interface DurationPoint {
+	tokens: number;
+	ms: number;
+}
+
+/**
+ * Least-squares fit of ms = msPerRequest + msPerPromptToken * tokens.
+ *
+ * Returns null when the records cannot separate the two terms — fewer than two
+ * of them, or every run the same prompt size — and when the fit comes back
+ * nonsensical (a negative term, which noise across few samples can produce).
+ * The caller falls back to splitting the observed average instead.
+ */
+function fitDurationTerms(
+	points: DurationPoint[],
+): Pick<Calibration, 'msPerRequest' | 'msPerPromptToken'> | null {
+	if (points.length < 2) {
+		return null;
+	}
+
+	const meanTokens =
+		points.reduce((total, point) => total + point.tokens, 0) / points.length;
+	const meanMs =
+		points.reduce((total, point) => total + point.ms, 0) / points.length;
+
+	let variance = 0;
+	let covariance = 0;
+	for (const point of points) {
+		const spread = point.tokens - meanTokens;
+		variance += spread * spread;
+		covariance += spread * (point.ms - meanMs);
+	}
+	if (variance === 0) {
+		return null;
+	}
+
+	const msPerPromptToken = covariance / variance;
+	const msPerRequest = meanMs - msPerPromptToken * meanTokens;
+	if (msPerPromptToken < 0 || msPerRequest < 0) {
+		return null;
+	}
+	return {msPerRequest, msPerPromptToken};
+}
+
+/**
+ * Split one averaged observation across the two duration terms, keeping the
+ * proportion the built-in defaults imply at that prompt size. Used when the
+ * records cannot support a fit: the magnitude is measured even though the
+ * shape is assumed, which beats attributing all of it to either term.
+ */
+function splitDurationTerms(
+	msPerRequest: number,
+	tokensPerRequest: number,
+): Pick<Calibration, 'msPerRequest' | 'msPerPromptToken'> {
+	if (tokensPerRequest <= 0) {
+		return {msPerRequest, msPerPromptToken: 0};
+	}
+	const shape =
+		DEFAULT_CALIBRATION.msPerRequest +
+		DEFAULT_CALIBRATION.msPerPromptToken * tokensPerRequest;
+	const fixedShare = DEFAULT_CALIBRATION.msPerRequest / shape;
+	return {
+		msPerRequest: msPerRequest * fixedShare,
+		msPerPromptToken: (msPerRequest * (1 - fixedShare)) / tokensPerRequest,
+	};
 }
 
 /**
@@ -143,15 +237,28 @@ export function calibrate(records: RunRecord[]): Calibration {
 	let passes = 0;
 	let durationMs = 0;
 	let outputTokens = 0;
+	let promptTokens = 0;
+	const points: DurationPoint[] = [];
 	for (const sample of usable) {
 		requests += sample.usage.requests;
 		durationMs += sample.usage.durationMs;
 		outputTokens += sample.usage.outputTokens;
+		promptTokens += sample.usage.promptTokens;
 		passes += sample.passes;
+		points.push({
+			tokens: sample.usage.promptTokens / sample.usage.requests,
+			ms: sample.usage.durationMs / sample.usage.requests,
+		});
 	}
 
+	// Prefer separating the fixed and per-token terms from the spread across
+	// records; fall back to splitting the pooled average when they cannot.
+	const duration =
+		fitDurationTerms(points) ??
+		splitDurationTerms(durationMs / requests, promptTokens / requests);
+
 	return {
-		msPerRequest: durationMs / requests,
+		...duration,
 		requestsPerPass:
 			passes > 0
 				? Math.max(1, requests / passes)
@@ -202,16 +309,26 @@ export async function estimateRun(
 		}
 
 		const requests = Math.round(packs.length * calibration.requestsPerPass);
+		// A retry resends the prompt, so both sides scale with requests.
+		const promptTokensSent = Math.round(
+			promptTokens * calibration.requestsPerPass,
+		);
 		repos.push({
 			repo: target.repo,
 			packs: packs.map(pack => pack.manifest.name),
 			files: audited.size,
+			filesPresent: files.length,
 			requests,
-			// A retry resends the prompt, so both sides scale with requests.
 			tokens:
-				Math.round(promptTokens * calibration.requestsPerPass) +
+				promptTokensSent +
 				Math.round(requests * calibration.outputTokensPerRequest),
-			durationMs: Math.round(requests * calibration.msPerRequest),
+			// Fixed per-request cost plus the part that tracks prompt size, so a
+			// config far larger than the recorded runs is not priced as if it were
+			// the same size.
+			durationMs: Math.round(
+				requests * calibration.msPerRequest +
+					promptTokensSent * calibration.msPerPromptToken,
+			),
 			missingPacks: missing,
 		});
 	}
@@ -253,7 +370,9 @@ function formatTokens(value: number): string {
 /** Wall-clock, rounded to the unit an operator actually schedules in. */
 function formatDuration(ms: number): string {
 	const seconds = Math.round(ms / 1000);
-	if (seconds < 90) {
+	// Hand over at a minute, not 90s: rounding the minutes figure from 90s
+	// upward would otherwise make "1 minute(s)" unreachable.
+	if (seconds < 60) {
 		return `${seconds} second(s)`;
 	}
 	const minutes = Math.round(seconds / 60);
@@ -273,10 +392,21 @@ function repoRow(repo: RepoEstimate): string {
 function caveats(estimate: AuditEstimate): string[] {
 	const notes: string[] = [];
 
-	const empty = estimate.repos.filter(repo => repo.files === 0);
-	if (empty.length > 0) {
+	const absent = estimate.repos.filter(repo => repo.filesPresent === 0);
+	if (absent.length > 0) {
 		notes.push(
-			`> ⚠️ ${empty.length} repo(s) contributed no files, so their cost is understated — check them out under the workspace, or pass --clone: ${empty.map(repo => repo.repo).join(', ')}`,
+			`> ⚠️ ${absent.length} repo(s) are not checked out, so their cost is understated — check them out under the workspace, or pass --clone: ${absent.map(repo => repo.repo).join(', ')}`,
+		);
+	}
+
+	// Present but scoped away: nothing to clone, and a pack is pointed at a repo
+	// it cannot see — the more useful of the two warnings.
+	const unmatched = estimate.repos.filter(
+		repo => repo.filesPresent > 0 && repo.files === 0,
+	);
+	if (unmatched.length > 0) {
+		notes.push(
+			`> ⚠️ ${unmatched.length} repo(s) are checked out but no file matched their packs' applies_to, so they will audit nothing: ${unmatched.map(repo => repo.repo).join(', ')}`,
 		);
 	}
 	for (const repo of estimate.repos) {
