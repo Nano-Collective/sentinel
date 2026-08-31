@@ -1,4 +1,5 @@
 import test from 'ava';
+import type {ReconcileResult} from '../dedup/reconcile.js';
 import type {Finding} from '../findings/types.js';
 import type {RunReport} from '../run/run.js';
 import type {PackOutcome, RepoOutcome} from '../run/types.js';
@@ -33,6 +34,20 @@ function pack(findings: Finding[]): PackOutcome {
 
 function repo(name: string, packs: PackOutcome[]): RepoOutcome {
 	return {repo: name, packs, missingPacks: []};
+}
+
+function result(overrides: Partial<ReconcileResult> = {}): ReconcileResult {
+	return {
+		targetRepo: 'org/a',
+		created: [],
+		touched: 0,
+		incremented: 0,
+		resolved: 0,
+		suppressed: 0,
+		suppressedByOverride: 0,
+		errors: [],
+		...overrides,
+	};
 }
 
 function report(overrides: Partial<RunReport> = {}): RunReport {
@@ -76,26 +91,84 @@ test('records the timestamp and mode', t => {
 	t.is(record.filing, undefined);
 });
 
-test('includes a filing summary on a live run', t => {
+test('includes every filing counter on a live run', t => {
 	const r = report({
 		filed: true,
 		reconciled: [
 			{
 				repo: 'org/a',
-				result: {
-					targetRepo: 'org/a',
+				result: result({
 					created: [{number: 1, url: 'u'}],
 					touched: 2,
-					incremented: 0,
+					incremented: 3,
 					resolved: 1,
-					suppressed: 0,
-					suppressedByOverride: 0,
-				},
+					suppressed: 4,
+					suppressedByOverride: 5,
+				}),
 			},
 		],
 	});
 	const record = buildRunRecord(r, TS, 'live');
-	t.deepEqual(record.filing, {filed: 1, touched: 2, resolved: 1});
+	t.deepEqual(record.filing, {
+		filed: 1,
+		touched: 2,
+		incremented: 3,
+		suppressed: 4,
+		suppressedByOverride: 5,
+		resolved: 1,
+	});
+});
+
+test('sums every filing counter across repos', t => {
+	const r = report({
+		filed: true,
+		reconciled: [
+			{
+				repo: 'org/a',
+				result: result({
+					created: [{number: 1, url: 'u'}],
+					touched: 1,
+					incremented: 2,
+					resolved: 3,
+					suppressed: 4,
+					suppressedByOverride: 5,
+				}),
+			},
+			{
+				repo: 'org/b',
+				result: result({
+					created: [
+						{number: 2, url: 'v'},
+						{number: 3, url: 'w'},
+					],
+					touched: 10,
+					incremented: 20,
+					resolved: 30,
+					suppressed: 40,
+					suppressedByOverride: 50,
+				}),
+			},
+		],
+	});
+	t.deepEqual(buildRunRecord(r, TS, 'live').filing, {
+		filed: 3,
+		touched: 11,
+		incremented: 22,
+		suppressed: 44,
+		suppressedByOverride: 55,
+		resolved: 33,
+	});
+});
+
+test('a live run that reconciled nothing zeroes every filing counter', t => {
+	t.deepEqual(buildRunRecord(report({filed: true}), TS, 'live').filing, {
+		filed: 0,
+		touched: 0,
+		incremented: 0,
+		suppressed: 0,
+		suppressedByOverride: 0,
+		resolved: 0,
+	});
 });
 
 test('carries target errors', t => {

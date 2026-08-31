@@ -4,6 +4,7 @@
  */
 
 import {findingHash} from '../dedup/hash.js';
+import type {ReconcileResult} from '../dedup/reconcile.js';
 import type {Finding} from '../findings/types.js';
 import type {PackOutcome, RepoOutcome, RunOutcome} from './types.js';
 
@@ -62,6 +63,21 @@ function repoSection(outcome: RepoOutcome): string {
 		parts.push(packSection(pack));
 	}
 	return parts.join('\n\n');
+}
+
+/** The per-repo filing line a live run prints for each reconciled repo. */
+export function renderFilingLine(
+	repo: string,
+	result: ReconcileResult,
+): string {
+	return [
+		`${repo}: filed ${result.created.length}`,
+		`touched ${result.touched}`,
+		`aged ${result.incremented}`,
+		`suppressed ${result.suppressed}`,
+		`suppressed-by-override ${result.suppressedByOverride}`,
+		`resolved ${result.resolved}`,
+	].join(', ');
 }
 
 /** Count the findings across a run. */

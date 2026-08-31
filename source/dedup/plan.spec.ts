@@ -72,6 +72,26 @@ test('suppression also covers wontfix and accepted closes', t => {
 	t.is(plan.toCreate.length, 0);
 });
 
+test('an open issue carrying a suppression label still suppresses', t => {
+	// hasSuppressionLabel is checked ahead of the state === 'open' branch, so
+	// the label is what counts, not the close. The run summary's `suppressed`
+	// counter and the calibration guidance in docs/findings/index.md both
+	// depend on this, so pin it: a wontfix nobody closed must not read as a
+	// touch.
+	const f = finding('a.rs');
+	const plan = planReconciliation(
+		[f],
+		[issueFor(f, {state: 'open', labels: ['sentinel', 'sentinel:wontfix']})],
+	);
+	t.deepEqual(plan.suppressed, [f]);
+	t.is(plan.toTouch.length, 0);
+	t.is(plan.toCreate.length, 0);
+	// It is suppressed, not aged — an absent-but-suppressed issue must not
+	// drift toward auto-resolution.
+	t.is(plan.toIncrementMiss.length, 0);
+	t.is(plan.toResolve.length, 0);
+});
+
 test('deduplicates identical findings within a single run', t => {
 	const f = finding('a.rs');
 	const plan = planReconciliation([f, {...f}], []);
