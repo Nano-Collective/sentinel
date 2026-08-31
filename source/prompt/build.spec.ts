@@ -1,4 +1,5 @@
 import test from 'ava';
+import {MAX_LINE} from '../findings/types.js';
 import type {RulePack} from '../rule-packs/types.js';
 import {buildAuditPrompt} from './build.js';
 
@@ -70,6 +71,18 @@ test('states the snake_case reporting contract with the allowed scales', t => {
 	t.true(prompt.includes('"low", "medium", "high", "critical"'));
 	t.true(prompt.includes('"low", "medium", "high"'));
 	t.true(prompt.includes('Return [] if you find nothing.'));
+});
+
+// The validator is the hard gate, but a prompt describing a looser contract
+// than it enforces costs a whole model run before anything gets filed. Pin the
+// two together: line numbers are integers, bounded by the same MAX_LINE.
+test('advertises the line_range bounds the validator enforces', t => {
+	const {prompt} = buildAuditPrompt({
+		pack: pack(),
+		files: [{path: 'programs/x.rs', content: 'x'}],
+	});
+	t.true(prompt.includes('{"start": <integer>, "end": <integer>}'));
+	t.true(prompt.includes(`1 <= start <= end <= ${MAX_LINE}`));
 });
 
 test('renders severity weighting when present', t => {

@@ -17,6 +17,7 @@ import {
 	isConfidence,
 	isSeverity,
 	type LineRange,
+	MAX_LINE,
 	type Severity,
 } from './types.js';
 
@@ -47,6 +48,11 @@ function isNonEmptyString(value: unknown): value is string {
 	return typeof value === 'string' && value.trim().length > 0;
 }
 
+/** Rejects non-numbers along with NaN, +/-Infinity and fractional values. */
+function isInteger(value: unknown): value is number {
+	return Number.isInteger(value);
+}
+
 function validateLineRange(
 	value: unknown,
 	index: number,
@@ -56,26 +62,26 @@ function validateLineRange(
 		errors.push({
 			index,
 			field: 'line_range',
-			message: 'line_range must be an object with numeric start and end',
+			message: 'line_range must be an object with integer start and end',
 		});
 		return false;
 	}
 
 	const {start, end} = value;
-	if (typeof start !== 'number' || typeof end !== 'number') {
+	if (!isInteger(start) || !isInteger(end)) {
 		errors.push({
 			index,
 			field: 'line_range',
-			message: 'line_range.start and line_range.end must both be numbers',
+			message: 'line_range.start and line_range.end must both be integers',
 		});
 		return false;
 	}
 
-	if (start < 1 || end < start) {
+	if (start < 1 || end < start || end > MAX_LINE) {
 		errors.push({
 			index,
 			field: 'line_range',
-			message: 'line_range must satisfy 1 <= start <= end',
+			message: `line_range must satisfy 1 <= start <= end <= ${MAX_LINE}`,
 		});
 		return false;
 	}

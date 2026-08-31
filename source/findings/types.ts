@@ -14,6 +14,14 @@ export const CONFIDENCES = ['low', 'medium', 'high'] as const;
 
 export type Confidence = (typeof CONFIDENCES)[number];
 
+/**
+ * The ceiling on a cited line number. No real source file comes close, so a
+ * value above it is a hallucinated number rather than a location. It sits here
+ * beside the other contract constants because both ends need it: the prompt
+ * advertises the bound and the validator enforces it.
+ */
+export const MAX_LINE = 10_000_000;
+
 /** A 1-indexed, inclusive line range within a file. */
 export interface LineRange {
 	start: number;
