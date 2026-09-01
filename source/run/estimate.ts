@@ -69,11 +69,12 @@ export interface RepoEstimate {
 	/** Distinct files at least one pack will send to the model. */
 	files: number;
 	/**
-	 * Files found in the checkout before `applies_to` scoping. Zero means the
-	 * repo is not checked out; non-zero with `files` at zero means it is present
-	 * but no pack matches anything in it.
+	 * Whether the repository is present under the workspace at all. Separate
+	 * from `files`, which is a count after `applies_to` scoping: a checked-out
+	 * repo that no pack matches also has zero files, and cloning will not fix
+	 * it, so the two need different advice.
 	 */
-	filesPresent: number;
+	checkedOut: boolean;
 	/** Model requests, retries included. */
 	requests: number;
 	tokens: number;
@@ -297,6 +298,13 @@ export async function estimateRun(
 		const {packs, missing} = selectPacks(loaded.packs, target.rulePacks);
 		const files = await deps.files.read(repoDir, unionPatterns(packs));
 
+		// `read` applies the patterns it is given, so this count alone cannot tell
+		// an absent checkout from a present one that nothing matched. Only when it
+		// comes back empty is an unscoped read worth its cost, and only then can
+		// it change which warning the operator gets.
+		const checkedOut =
+			files.length > 0 || (await deps.files.read(repoDir, [])).length > 0;
+
 		// Build the real prompts: what the model is sent is what we count.
 		const audited = new Set<string>();
 		let promptTokens = 0;
@@ -317,7 +325,7 @@ export async function estimateRun(
 			repo: target.repo,
 			packs: packs.map(pack => pack.manifest.name),
 			files: audited.size,
-			filesPresent: files.length,
+			checkedOut,
 			requests,
 			tokens:
 				promptTokensSent +
@@ -392,7 +400,7 @@ function repoRow(repo: RepoEstimate): string {
 function caveats(estimate: AuditEstimate): string[] {
 	const notes: string[] = [];
 
-	const absent = estimate.repos.filter(repo => repo.filesPresent === 0);
+	const absent = estimate.repos.filter(repo => !repo.checkedOut);
 	if (absent.length > 0) {
 		notes.push(
 			`> ⚠️ ${absent.length} repo(s) are not checked out, so their cost is understated — check them out under the workspace, or pass --clone: ${absent.map(repo => repo.repo).join(', ')}`,
@@ -402,7 +410,7 @@ function caveats(estimate: AuditEstimate): string[] {
 	// Present but scoped away: nothing to clone, and a pack is pointed at a repo
 	// it cannot see — the more useful of the two warnings.
 	const unmatched = estimate.repos.filter(
-		repo => repo.filesPresent > 0 && repo.files === 0,
+		repo => repo.checkedOut && repo.files === 0,
 	);
 	if (unmatched.length > 0) {
 		notes.push(

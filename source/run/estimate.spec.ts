@@ -2,6 +2,7 @@ import test from 'ava';
 import type {SentinelConfig} from '../config/types.js';
 import type {RunRecord, RunUsage} from '../observe/types.js';
 import type {SourceFile} from '../prompt/types.js';
+import {matchesGlob} from '../rule-packs/glob.js';
 import type {RulePack} from '../rule-packs/types.js';
 import type {PrepareResult} from './clone.js';
 import {
@@ -53,10 +54,22 @@ function packLoader(loaded: LoadedPacks): PackLoader {
 	};
 }
 
+/**
+ * Stands in for a checked-out repository. It must apply the patterns it is
+ * given exactly as fsRepoFiles does — a stub that returns everything models a
+ * read production never performs, and cannot tell an absent checkout from a
+ * present one that nothing matched.
+ */
 function repoFiles(files: SourceFile[]): RepoFiles {
 	return {
-		async read(): Promise<SourceFile[]> {
-			return files;
+		async read(_repoDir: string, patterns: string[]): Promise<SourceFile[]> {
+			// An empty pattern list means the whole repository.
+			if (patterns.length === 0) {
+				return files;
+			}
+			return files.filter(file =>
+				patterns.some(pattern => matchesGlob(pattern, file.path)),
+			);
 		},
 		async readText(): Promise<string | null> {
 			return null;
@@ -657,7 +670,7 @@ test('a checked-out repo that matches no file is not told to clone', async t => 
 		{path: 'README.md', content: '# nothing to audit'},
 	]);
 	t.is(estimate.repos[0]?.files, 0);
-	t.is(estimate.repos[0]?.filesPresent, 1);
+	t.true(estimate.repos[0]?.checkedOut);
 
 	const markdown = renderEstimate(estimate);
 	t.true(markdown.includes('no file matched'));
@@ -671,7 +684,7 @@ test('warns about missing packs, unparseable packs, and target errors', t => {
 				repo: 'my-org/a',
 				packs: ['p'],
 				files: 3,
-				filesPresent: 3,
+				checkedOut: true,
 				requests: 1,
 				tokens: 100,
 				durationMs: 1000,
@@ -737,4 +750,78 @@ test('calibrate survives a record with no prompt tokens', async t => {
 	);
 	t.true(Number.isFinite(estimate.totals.durationMs));
 	t.true(estimate.totals.durationMs > 0);
+});
+
+// The case from review: one pack scoped to a language the repo does not
+// contain. Both the scoped read and the audited set come back empty, so the
+// only thing that separates this from an un-cloned repo is a read that ignores
+// the patterns. Getting it wrong sends the operator to clone what they have.
+test('a single pack matching nothing is not mistaken for a missing checkout', async t => {
+	const python = pack('py');
+	python.manifest.appliesTo = {paths: ['**/*.py'], languages: ['python']};
+
+	const estimate = await estimateRun(
+		config({targets: [{repo: 'my-org/a', rulePacks: ['py']}]}),
+		{
+			files: repoFiles(FILES), // a TypeScript repo, checked out
+			packs: packLoader({packs: [python], errors: []}),
+		},
+		OPTIONS,
+	);
+
+	t.is(estimate.repos[0]?.files, 0);
+	t.true(estimate.repos[0]?.checkedOut);
+
+	const markdown = renderEstimate(estimate);
+	t.true(markdown.includes('no file matched'));
+	t.false(markdown.includes('--clone'));
+});
+
+test('an absent checkout is still told to clone', async t => {
+	// Same shape, but nothing on disk at all: the unscoped read is empty too.
+	const python = pack('py');
+	python.manifest.appliesTo = {paths: ['**/*.py'], languages: ['python']};
+
+	const estimate = await estimateRun(
+		config({targets: [{repo: 'my-org/a', rulePacks: ['py']}]}),
+		{
+			files: repoFiles([]),
+			packs: packLoader({packs: [python], errors: []}),
+		},
+		OPTIONS,
+	);
+
+	t.false(estimate.repos[0]?.checkedOut);
+	const markdown = renderEstimate(estimate);
+	t.true(markdown.includes('are not checked out'));
+	t.true(markdown.includes('--clone'));
+});
+
+test('the unscoped read is skipped when the scoped one found files', async t => {
+	// The extra read exists only to disambiguate an empty result, so it must not
+	// cost anything on the common path.
+	const reads: string[][] = [];
+	const counting: RepoFiles = {
+		async read(_repoDir: string, patterns: string[]): Promise<SourceFile[]> {
+			reads.push(patterns);
+			return patterns.length === 0
+				? FILES
+				: FILES.filter(file =>
+						patterns.some(pattern => matchesGlob(pattern, file.path)),
+					);
+		},
+		async readText(): Promise<string | null> {
+			return null;
+		},
+	};
+
+	const estimate = await estimateRun(
+		config(),
+		{files: counting, packs: packLoader({packs: [pack('p')], errors: []})},
+		OPTIONS,
+	);
+
+	t.true(estimate.repos[0]?.checkedOut);
+	t.is(reads.length, 1);
+	t.deepEqual(reads[0], ['src/**/*.ts']);
 });
