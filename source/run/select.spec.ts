@@ -1,6 +1,6 @@
 import test from 'ava';
 import type {RulePack} from '../rule-packs/types.js';
-import {isEnabledPackPath, unionPatterns} from './select.js';
+import {isEnabledPackPath, selectPacks, unionPatterns} from './select.js';
 
 console.log('\nrun/select.spec.ts');
 
@@ -19,20 +19,52 @@ test('non-markdown files are not packs', t => {
 	t.false(isEnabledPackPath('config.yaml'));
 });
 
-function pack(paths: string[]): RulePack {
+function pack(paths: string[], name = 'p', dependsOn: string[] = []): RulePack {
 	return {
 		manifest: {
-			name: 'p',
+			name,
 			version: '1.0.0',
 			description: '',
 			appliesTo: {paths, languages: []},
 			severityWeighting: {},
-			dependsOn: [],
+			dependsOn,
 			category: '',
 		},
 		body: 'audit',
 	};
 }
+
+const NAMED = (name: string, dependsOn: string[] = []): RulePack =>
+	pack(['a/**'], name, dependsOn);
+
+test('selectPacks resolves named packs and their dependencies', t => {
+	const {packs, missing} = selectPacks(
+		[NAMED('app', ['base']), NAMED('base')],
+		['app'],
+	);
+	t.deepEqual(packs.map(entry => entry.manifest.name).sort(), ['app', 'base']);
+	t.deepEqual(missing, []);
+});
+
+test('selectPacks de-duplicates a pack named twice', t => {
+	const {packs} = selectPacks(
+		[NAMED('app', ['base']), NAMED('base')],
+		['app', 'base'],
+	);
+	t.is(packs.length, 2);
+});
+
+test('selectPacks reports a name the directory does not have', t => {
+	const {packs, missing} = selectPacks([NAMED('app')], ['app', 'gone']);
+	t.deepEqual(missing, ['gone']);
+	t.is(packs.length, 1);
+});
+
+test('selectPacks reports a pack whose dependency chain does not resolve', t => {
+	const {packs, missing} = selectPacks([NAMED('app', ['absent'])], ['app']);
+	t.deepEqual(missing, ['app']);
+	t.is(packs.length, 0);
+});
 
 test('unionPatterns collects every packs paths', t => {
 	const patterns = unionPatterns([pack(['a/**']), pack(['b/**', 'a/**'])]);

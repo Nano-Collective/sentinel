@@ -30,6 +30,7 @@ function pack(overrides: Partial<PackOutcome> = {}): PackOutcome {
 		attempts: 1,
 		ok: true,
 		errors: [],
+		usage: {durationMs: 0, promptTokens: 0, outputTokens: 0},
 		...overrides,
 	};
 }

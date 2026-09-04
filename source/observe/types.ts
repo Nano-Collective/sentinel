@@ -29,6 +29,21 @@ export interface RepoRunRecord {
 /** The mode a run executed in. */
 export type RunMode = 'live' | 'dry-run' | 'audit-only';
 
+/**
+ * What a run cost the model, aggregated across every pack pass. `sentinel
+ * estimate` reads these back to calibrate its figures.
+ */
+export interface RunUsage {
+	/** Model invocations, auto-fix retries included. */
+	requests: number;
+	/** Wall-clock milliseconds spent in the model. */
+	durationMs: number;
+	/** Estimated prompt tokens sent. */
+	promptTokens: number;
+	/** Estimated tokens returned. */
+	outputTokens: number;
+}
+
 /** Issue-filing totals for a live run. */
 export interface FilingSummary {
 	filed: number;
@@ -49,6 +64,8 @@ export interface RunRecord {
 		repos: number;
 		findings: number;
 		bySeverity: SeverityCounts;
+		/** Absent on records written before runs were instrumented. */
+		usage?: RunUsage;
 	};
 	/** Present on a live run. */
 	filing?: FilingSummary;

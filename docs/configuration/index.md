@@ -86,6 +86,8 @@ Systematic noise on one repository is handled with an opt-in `sentinel.yaml` pla
 
 Cost scales with repositories × rule packs × schedule frequency. Twenty repos with four packs each, run daily, is eighty model calls a day. Local models keep that cost at zero; cloud models do not. Keep the default configuration modest, lean on local models for the routine passes, and reserve a cloud fallback for the cases that genuinely need it.
 
+To put numbers on a specific config before committing to it, run [`sentinel estimate`](../cli/index.md#estimate) — it reports the requests, tokens, and runtime the config implies, calibrated from your own recorded runs.
+
 ## Observability
 
 Each run commits a run record to the config repo and writes a step summary. A lightweight static dashboard is generated into the config repo's GitHub Pages from those committed records — no database. See [Workflow → observability](../workflow/index.md#observability-and-run-history).
