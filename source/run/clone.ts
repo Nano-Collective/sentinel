@@ -41,26 +41,44 @@ export function normaliseRepoRef(ref: string): string | null {
 	if (text.length === 0) {
 		return null;
 	}
-	// scp-style SSH: git@github.com:owner/repo.git
-	const scp = text.match(/^[^/]+@[^/:]+:(.+)$/);
-	if (scp?.[1]) {
-		text = scp[1];
+
+	// Deliberately parsed with string operations rather than regular
+	// expressions. The input is a git remote URL read off disk, so it is not
+	// under our control, and the obvious patterns for this shape
+	// (`^[^/]+@[^/:]+:(.+)$` and friends) backtrack polynomially — CodeQL flags
+	// them as ReDoS, correctly. Everything below is a single linear scan.
+	const scheme = text.indexOf('://');
+	if (scheme !== -1) {
+		// scheme://[credentials@]host/owner/repo — drop through the first slash
+		// after the host, whatever the authority contains.
+		const afterScheme = text.slice(scheme + 3);
+		const slash = afterScheme.indexOf('/');
+		text = slash === -1 ? '' : afterScheme.slice(slash + 1);
 	} else {
-		// Anything with a scheme: strip it and the host.
-		const url = text.match(
-			/^[a-zA-Z][a-zA-Z0-9+.-]*:\/\/([^/]*@)?[^/]+\/(.+)$/,
-		);
-		if (url?.[2]) {
-			text = url[2];
+		// scp-style SSH: user@host:owner/repo. Only when the authority really
+		// does precede the colon, so a bare `owner/repo` is left alone.
+		const colon = text.indexOf(':');
+		if (colon !== -1 && text.lastIndexOf('@', colon) !== -1) {
+			text = text.slice(colon + 1);
 		}
 	}
-	text = text.replace(/\.git$/, '').replace(/\/+$/, '');
+
+	// Splitting before stripping `.git` means a trailing slash is handled by the
+	// same pass, in either order (`owner/repo.git/` as well as `owner/repo/`).
 	const segments = text.split('/').filter(segment => segment.length > 0);
 	if (segments.length < 2) {
 		return null;
 	}
 	// The last two segments are owner/repo; anything before is host or path.
-	return segments.slice(-2).join('/').toLowerCase();
+	const owner = segments[segments.length - 2] as string;
+	let repo = segments[segments.length - 1] as string;
+	if (repo.endsWith('.git')) {
+		repo = repo.slice(0, -4);
+	}
+	if (repo.length === 0) {
+		return null;
+	}
+	return `${owner}/${repo}`.toLowerCase();
 }
 
 /** True if a git remote URL points at the given `owner/repo`. */

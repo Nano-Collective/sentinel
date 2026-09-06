@@ -203,3 +203,29 @@ test('no unusable state ever asks for the directory to be deleted silently', t =
 		t.true(state.kind === 'unusable' && state.reason.length > 0);
 	}
 });
+
+test('normaliseRepoRef handles a .git suffix and a trailing slash together', t => {
+	t.is(normaliseRepoRef('https://github.com/my-org/prog.git/'), 'my-org/prog');
+	t.is(normaliseRepoRef('my-org/prog.git/'), 'my-org/prog');
+});
+
+test('normaliseRepoRef rejects a ref whose repo segment is only .git', t => {
+	t.is(normaliseRepoRef('my-org/.git'), null);
+});
+
+test('normaliseRepoRef is linear on adversarial input', t => {
+	// The first implementation used backtracking regexes on a remote URL read
+	// off disk. CodeQL flagged three polynomial-ReDoS paths; these are the
+	// shapes it named. A quadratic matcher does not return in this budget.
+	const shapes = [
+		`${'.@'.repeat(20000)}!`,
+		`A://${'@'.repeat(20000)}!`,
+		'/'.repeat(50000),
+		`${'.@.:'.repeat(20000)}!`,
+	];
+	const started = Date.now();
+	for (const shape of shapes) {
+		normaliseRepoRef(shape);
+	}
+	t.true(Date.now() - started < 1000);
+});
