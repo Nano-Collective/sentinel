@@ -20,6 +20,7 @@ import {
 } from 'node:fs';
 import {dirname, join, resolve} from 'node:path';
 import {createInterface} from 'node:readline/promises';
+import {flagAll, flagBool, flagStr, parseFlags} from './args/flags.js';
 import {parseConfig} from './config/parse.js';
 import type {ModelConfig} from './config/types.js';
 import {parseInitArgs} from './init/args.js';
@@ -126,11 +127,11 @@ const RUN_USAGE = `sentinel run [options]
 Config-driven (default): reads sentinel.yaml and audits every target. Files
 issues when GITHUB_TOKEN is set and --dry-run is not passed.
 
-Local (calibration): audit one pack against one repo, write findings to
-Markdown, and file nothing.
+Local (calibration): audit one or more packs against one repo, write findings
+to Markdown, and file nothing.
 
 Options:
-  --rule-pack <path>    Local mode: the rule pack to run
+  --rule-pack <path>    Local mode: a rule pack to run. Repeat for several
   --repo <path>         Local mode: the repository directory to audit
   --output <path>       Write the Markdown report here (default stdout)
   --config <path>       Path to sentinel.yaml (default ./sentinel.yaml)
@@ -140,38 +141,6 @@ Options:
   --provider <name>     Local mode model provider (default ollama)
   --model <id>          Local mode model id (default llama3.1:70b)
   --dry-run             Audit but file no issues`;
-
-function flagMap(argv: string[]): Map<string, string | true> {
-	const map = new Map<string, string | true>();
-	for (let i = 0; i < argv.length; i++) {
-		const token = argv[i];
-		if (!token || !token.startsWith('--')) {
-			continue;
-		}
-		const body = token.slice(2);
-		const eq = body.indexOf('=');
-		if (eq !== -1) {
-			map.set(body.slice(0, eq), body.slice(eq + 1));
-			continue;
-		}
-		const next = argv[i + 1];
-		if (next !== undefined && !next.startsWith('--')) {
-			map.set(body, next);
-			i++;
-		} else {
-			map.set(body, true);
-		}
-	}
-	return map;
-}
-
-function flagStr(
-	flags: Map<string, string | true>,
-	key: string,
-): string | undefined {
-	const value = flags.get(key);
-	return typeof value === 'string' ? value : undefined;
-}
 
 function writeReport(markdown: string, output: string | undefined): void {
 	if (output) {
@@ -220,20 +189,21 @@ async function runRun(argv: string[]): Promise<number> {
 		console.log(RUN_USAGE);
 		return 0;
 	}
-	const flags = flagMap(argv);
+	const flags = parseFlags(argv);
 	const output = flagStr(flags, 'output');
 
-	// Local calibration mode.
-	const rulePack = flagStr(flags, 'rule-pack');
+	// Local calibration mode. `--rule-pack` is repeatable, so several packs can
+	// be calibrated against one repository in a single pass.
+	const rulePacks = flagAll(flags, 'rule-pack');
 	const repo = flagStr(flags, 'repo');
-	if (rulePack && repo) {
+	if (rulePacks.length > 0 && repo) {
 		const model: ModelConfig = {
 			provider: flagStr(flags, 'provider') ?? 'ollama',
 			model: flagStr(flags, 'model') ?? 'llama3.1:70b',
 		};
 		const localConfigDir = flagStr(flags, 'config-dir');
 		const outcome = await runLocal(
-			rulePack,
+			rulePacks,
 			repo,
 			model,
 			{runner: nanocoderRunner, files: fsRepoFiles},
@@ -254,9 +224,9 @@ async function runRun(argv: string[]): Promise<number> {
 		return 1;
 	}
 
-	const dryRun = flags.get('dry-run') === true;
+	const dryRun = flagBool(flags, 'dry-run');
 	const workspace = flagStr(flags, 'workspace') ?? '.';
-	const noClone = flags.get('no-clone') === true;
+	const noClone = flagBool(flags, 'no-clone');
 
 	// The client is available whenever a token is present — a dry run uses it to
 	// read existing issues for the preview, a live run to file.
@@ -315,7 +285,7 @@ async function runRun(argv: string[]): Promise<number> {
 	}
 
 	// Commit the durable run record and regenerate the static dashboard.
-	if (flags.get('no-record') !== true) {
+	if (!flagBool(flags, 'no-record')) {
 		const mode: RunMode = dryRun
 			? 'dry-run'
 			: report.filed
@@ -323,7 +293,7 @@ async function runRun(argv: string[]): Promise<number> {
 				: 'audit-only';
 		const recordsDir = flagStr(flags, 'records-dir') ?? 'runs';
 		writeRunRecord(buildRunRecord(report, now, mode), recordsDir);
-		if (flags.get('no-dashboard') !== true) {
+		if (!flagBool(flags, 'no-dashboard')) {
 			writeDashboard(
 				recordsDir,
 				flagStr(flags, 'dashboard-dir') ?? 'dashboard',
@@ -357,7 +327,7 @@ async function runEstimate(argv: string[]): Promise<number> {
 		console.log(ESTIMATE_USAGE);
 		return 0;
 	}
-	const flags = flagMap(argv);
+	const flags = parseFlags(argv);
 
 	const configPath = flagStr(flags, 'config') ?? 'sentinel.yaml';
 	const parsed = parseConfig(readFileSync(configPath, 'utf8'));
@@ -374,7 +344,7 @@ async function runEstimate(argv: string[]): Promise<number> {
 			files: fsRepoFiles,
 			packs: fsPackLoader,
 			repoLister: ghRepoLister,
-			cloneRepo: flags.get('clone') === true ? prepareRepo : undefined,
+			cloneRepo: flagBool(flags, 'clone') ? prepareRepo : undefined,
 			records: readRunRecords(flagStr(flags, 'records-dir') ?? 'runs'),
 		},
 		{

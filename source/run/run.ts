@@ -220,37 +220,43 @@ export interface RunLocalDeps {
 }
 
 /**
- * Run a single pack against a repository directory for off-cycle calibration.
- * Never files issues. Throws if the pack file is missing or invalid.
+ * Run one or more packs against a repository directory for off-cycle
+ * calibration. Never files issues. Throws if a pack file is missing or invalid.
+ *
+ * Packs are named explicitly here, so unlike the config-driven path this does
+ * not resolve `depends_on` — the caller lists what it wants run, in order.
  */
 export async function runLocal(
-	packPath: string,
+	packPaths: string[],
 	repoDir: string,
 	model: SentinelConfig['model'],
 	deps: RunLocalDeps,
 	options: AutoFixOptions = {},
 ): Promise<RunOutcome> {
-	const text = await deps.files.readText(packPath);
-	if (text === null) {
-		throw new Error(`rule pack not found: ${packPath}`);
-	}
-	const parsed = parseRulePack(text);
-	if (!parsed.valid || !parsed.pack) {
-		const detail = parsed.errors
-			.map(error => `${error.field}: ${error.message}`)
-			.join('; ');
-		throw new Error(`invalid rule pack ${packPath}: ${detail}`);
+	const packOutcomes: PackOutcome[] = [];
+
+	for (const packPath of packPaths) {
+		const text = await deps.files.readText(packPath);
+		if (text === null) {
+			throw new Error(`rule pack not found: ${packPath}`);
+		}
+		const parsed = parseRulePack(text);
+		if (!parsed.valid || !parsed.pack) {
+			const detail = parsed.errors
+				.map(error => `${error.field}: ${error.message}`)
+				.join('; ');
+			throw new Error(`invalid rule pack ${packPath}: ${detail}`);
+		}
+
+		const pack = parsed.pack;
+		const files = await deps.files.read(repoDir, pack.manifest.appliesTo.paths);
+		packOutcomes.push(
+			await auditPack(pack, {repoName: repoDir, files}, model, deps.runner, {
+				...options,
+				cwd: repoDir,
+			}),
+		);
 	}
 
-	const pack = parsed.pack;
-	const files = await deps.files.read(repoDir, pack.manifest.appliesTo.paths);
-	const outcome = await auditPack(
-		pack,
-		{repoName: repoDir, files},
-		model,
-		deps.runner,
-		{...options, cwd: repoDir},
-	);
-
-	return {repos: [{repo: repoDir, packs: [outcome], missingPacks: []}]};
+	return {repos: [{repo: repoDir, packs: packOutcomes, missingPacks: []}]};
 }

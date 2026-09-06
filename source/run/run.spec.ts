@@ -294,7 +294,7 @@ test('runLocal audits a single pack and never files', async t => {
 		},
 	};
 	const outcome = await runLocal(
-		'/packs/p.md',
+		['/packs/p.md'],
 		'/repo',
 		{provider: 'ollama', model: 'llama3.1'},
 		{runner: findingRunner(), files},
@@ -314,7 +314,7 @@ test('runLocal throws on a missing pack file', async t => {
 	};
 	await t.throwsAsync(
 		runLocal(
-			'/nope.md',
+			['/nope.md'],
 			'/repo',
 			{provider: 'o', model: 'm'},
 			{runner: findingRunner(), files},
@@ -334,11 +334,82 @@ test('runLocal throws on an invalid pack file', async t => {
 	};
 	await t.throwsAsync(
 		runLocal(
-			'/bad.md',
+			['/bad.md'],
 			'/repo',
 			{provider: 'o', model: 'm'},
 			{runner: findingRunner(), files},
 		),
 		{message: /invalid rule pack/},
+	);
+});
+
+test('runLocal runs every pack it is given, in order', async t => {
+	// The bug behind #3: --rule-pack was documented as the way to choose packs
+	// in local mode but the parser kept one value, so only the last ever ran.
+	const bodies: Record<string, string> = {
+		'/packs/a.md':
+			'---\nname: a\nversion: 1.0.0\ndescription: d\ncategory: security\napplies_to:\n  paths: ["src/**/*.ts"]\n  languages: [typescript]\n---\nFlag bugs.\n',
+		'/packs/b.md':
+			'---\nname: b\nversion: 2.0.0\ndescription: d\ncategory: security\napplies_to:\n  paths: ["lib/**/*.ts"]\n  languages: [typescript]\n---\nFlag bugs.\n',
+	};
+	const requested: string[] = [];
+	const files: RepoFiles = {
+		async read(_dir: string, patterns: string[]): Promise<SourceFile[]> {
+			requested.push(patterns.join(','));
+			return [{path: 'src/a.ts', content: 'x'}];
+		},
+		async readText(path: string): Promise<string | null> {
+			return bodies[path] ?? null;
+		},
+	};
+
+	const outcome = await runLocal(
+		['/packs/a.md', '/packs/b.md'],
+		'/repo',
+		{provider: 'ollama', model: 'llama3.1'},
+		{runner: findingRunner(), files},
+	);
+
+	t.is(outcome.repos.length, 1);
+	t.deepEqual(
+		outcome.repos[0]?.packs.map(packOutcome => packOutcome.pack),
+		['a', 'b'],
+	);
+	// Each pack is scoped by its own applies_to rather than a shared union.
+	t.deepEqual(requested, ['src/**/*.ts', 'lib/**/*.ts']);
+});
+
+test('runLocal with no packs audits nothing rather than throwing', async t => {
+	const outcome = await runLocal(
+		[],
+		'/repo',
+		{provider: 'o', model: 'm'},
+		{runner: findingRunner(), files: repoFiles()},
+	);
+	t.is(outcome.repos[0]?.packs.length, 0);
+});
+
+test('runLocal names the offending pack when one of several is invalid', async t => {
+	const bodies: Record<string, string> = {
+		'/packs/a.md':
+			'---\nname: a\nversion: 1.0.0\ndescription: d\ncategory: security\napplies_to:\n  paths: ["src/**/*.ts"]\n  languages: [typescript]\n---\nFlag bugs.\n',
+		'/packs/bad.md': 'not a pack',
+	};
+	const files: RepoFiles = {
+		async read(): Promise<SourceFile[]> {
+			return [{path: 'src/a.ts', content: 'x'}];
+		},
+		async readText(path: string): Promise<string | null> {
+			return bodies[path] ?? null;
+		},
+	};
+	await t.throwsAsync(
+		runLocal(
+			['/packs/a.md', '/packs/bad.md'],
+			'/repo',
+			{provider: 'o', model: 'm'},
+			{runner: findingRunner(), files},
+		),
+		{message: /invalid rule pack \/packs\/bad\.md/},
 	);
 });
