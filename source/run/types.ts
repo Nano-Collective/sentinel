@@ -35,6 +35,20 @@ export interface PackLoader {
 	load(packsDir: string): Promise<LoadedPacks>;
 }
 
+/**
+ * What one pack pass actually cost. Recorded on every run so `sentinel
+ * estimate` can calibrate its figures against this install's own hardware and
+ * model rather than a built-in guess.
+ */
+export interface PackUsage {
+	/** Wall-clock milliseconds the pass took, retries included. */
+	durationMs: number;
+	/** Estimated prompt tokens sent across every attempt. */
+	promptTokens: number;
+	/** Estimated tokens the model returned. */
+	outputTokens: number;
+}
+
 /** The outcome of one pack's audit pass against one repository. */
 export interface PackOutcome {
 	pack: string;
@@ -46,6 +60,8 @@ export interface PackOutcome {
 	runError?: string;
 	/** The raw model output, kept for diagnosing a failed audit. */
 	raw?: string;
+	/** What the pass cost, measured as it ran. */
+	usage: PackUsage;
 }
 
 /** All pack outcomes for one repository. */

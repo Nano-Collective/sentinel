@@ -6,7 +6,7 @@ sidebar_order: 7
 
 # CLI
 
-The `@nanocollective/sentinel` package is both the scaffolder and the runtime. It exposes two commands: `init` scaffolds a config repo, and `run` performs an audit. The scheduled [workflow](../workflow/index.md) invokes `run` under the hood, and you can invoke either directly.
+The `@nanocollective/sentinel` package is both the scaffolder and the runtime. It exposes three commands: `init` scaffolds a config repo, `run` performs an audit, and `estimate` sizes an audit before you run it. The scheduled [workflow](../workflow/index.md) invokes `run` under the hood, and you can invoke any of them directly.
 
 ```bash
 npx @nanocollective/sentinel <command> [options]
@@ -57,3 +57,43 @@ npx @nanocollective/sentinel run \
 A local `run` **writes findings to a Markdown file and never files issues** — issue filing needs a GitHub token, which is only present in the Actions path. This makes local `run` the [calibration path](../rule-packs/authoring.md#calibrate-before-you-file) for pack authors: iterate on a pack against a real repo, read the Markdown, adjust, repeat, all without touching anyone's issue tracker.
 
 The same validator, dedup logic, and findings model apply in both contexts, so what you see locally is what the workflow will produce.
+
+## `estimate`
+
+Sizes an audit **before** it runs: how many repositories and rule packs are in scope, how many files they put in front of the model, and roughly how many model requests, tokens, and minutes that costs. It runs no model and files no issues — `--clone` is the one flag that writes anything, checking out missing repos. Useful when you are about to point Sentinel at a dozen more repositories, or adding a pack to every target and want to know what that does to the nightly window.
+
+```bash
+npx @nanocollective/sentinel estimate
+```
+
+```markdown
+# Sentinel audit estimate
+
+- **Repositories:** 18
+- **Rule packs:** 5
+- **Files:** 1,204
+- **Estimated AI requests:** ~420
+- **Estimated tokens:** ~3.8M
+- **Estimated runtime:** ~14 minute(s)
+
+Calibrated from the last 6 run record(s).
+```
+
+| Flag | Description |
+| --- | --- |
+| `--config <path>` | Path to `sentinel.yaml`. Defaults to `./sentinel.yaml`. |
+| `--packs-dir <path>` | Rule packs directory. Defaults to `rule-packs/` beside the config. |
+| `--workspace <path>` | Where the target repos are checked out. Defaults to `.`. |
+| `--records-dir <path>` | Run records to calibrate from. Defaults to `runs`. |
+| `--clone` | Check out any target repo not already present in the workspace. |
+| `--output <path>` | Write the Markdown estimate here. Defaults to stdout. |
+
+### How the figures are produced
+
+The token figure is **measured, not guessed**: `estimate` assembles the same prompts the audit would send — the pack body, the reporting contract, and the source files scoped by each pack's `applies_to.paths` — and counts them. What varies between installs is the per-request cost, so the request, token, and runtime figures are calibrated from the run records the last ten runs committed. Every run is instrumented for this: it records how long each pack pass took, how many model requests it made (auto-fix retries included), and the tokens it sent and received across every attempt — an auto-fix retry resends the prompt and generates a second response, and both are counted.
+
+Runtime is **not** a flat per-request average. A request costs a fixed amount regardless of size plus an amount that tracks prompt size, and both terms are fitted from the records, so sizing a config far larger than anything you have run is not priced as though the prompts stayed the same. When the records cannot separate the two — a single run, or every run the same size — the measured average is split using the proportion the built-in defaults imply.
+
+Until a run has been recorded, the figures fall back to built-in defaults, and the output says so. Treat a first, uncalibrated estimate as an order of magnitude rather than a number to schedule against.
+
+Repositories already checked out under `--workspace` are measured from their real files. Any that are not are counted with zero files and called out in the output, so a partial estimate never reads as the whole picture — pass `--clone` to check the rest out first. A repo that *is* checked out but whose files no pack matches gets a separate warning: nothing needs cloning, but a pack is pointed at a repository it cannot see.

@@ -49,7 +49,7 @@ Full documentation is available online at **[docs.nanocollective.org](https://do
 - **[Configuration](docs/configuration/index.md)** — The `sentinel.yaml` reference
 - **[Workflow](docs/workflow/index.md)** — The scheduled audit, run modes, and the execution model
 - **[Findings & Issues](docs/findings/index.md)** — The severity model, issue filing, dedup, and suppression
-- **[CLI](docs/cli/index.md)** — `init` and `run` command reference
+- **[CLI](docs/cli/index.md)** — `init`, `run`, and `estimate` command reference
 - **[Community](docs/community.md)** — Contributing, Discord, and how to help
 
 ## What Sentinel is not (in v1)

@@ -1,9 +1,12 @@
 /**
- * Pure helpers for selecting pack files and the file patterns to gather. A pack
- * file is an enabled `.md` whose path contains no underscore-prefixed segment —
- * the `_starter/` convention that keeps template packs from loading.
+ * Pure helpers for selecting the packs a run executes: which files in the
+ * rule-packs directory are packs at all, which packs a target resolves to, and
+ * which repository files they need gathered. A pack file is an enabled `.md`
+ * whose path contains no underscore-prefixed segment — the `_starter/`
+ * convention that keeps template packs from loading.
  */
 
+import {resolveDependencies} from '../rule-packs/dependencies.js';
 import type {RulePack} from '../rule-packs/types.js';
 
 /** True if a rule-packs-relative path is an enabled pack file. */
@@ -31,4 +34,48 @@ export function unionPatterns(packs: RulePack[]): string[] {
 		}
 	}
 	return [...patterns];
+}
+
+/** The packs one target actually runs, and the names that did not resolve. */
+export interface SelectedPacks {
+	packs: RulePack[];
+	/** Named packs missing from the directory or with an unresolvable chain. */
+	missing: string[];
+}
+
+/**
+ * Resolve a target's rule pack names into the packs to run, pulling in each
+ * pack's `depends_on` chain and de-duplicating across names.
+ */
+export function selectPacks(
+	available: RulePack[],
+	names: string[],
+): SelectedPacks {
+	const byName = new Map(available.map(pack => [pack.manifest.name, pack]));
+	const resolved = new Set<string>();
+	const missing: string[] = [];
+
+	for (const name of names) {
+		if (!byName.has(name)) {
+			missing.push(name);
+			continue;
+		}
+		const chain = resolveDependencies(available, name);
+		if (chain.errors.length > 0) {
+			missing.push(name);
+			continue;
+		}
+		for (const resolvedName of chain.order) {
+			resolved.add(resolvedName);
+		}
+	}
+
+	const packs: RulePack[] = [];
+	for (const name of resolved) {
+		const pack = byName.get(name);
+		if (pack) {
+			packs.push(pack);
+		}
+	}
+	return {packs, missing};
 }

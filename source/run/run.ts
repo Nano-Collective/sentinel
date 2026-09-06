@@ -16,9 +16,7 @@ import {targetRepoFor} from '../issues/file.js';
 import type {FilingContext, ReconcileClient} from '../issues/types.js';
 import type {AutoFixOptions} from '../orchestrator/auto-fix.js';
 import type {ModelRunner} from '../orchestrator/types.js';
-import {resolveDependencies} from '../rule-packs/dependencies.js';
 import {parseRulePack} from '../rule-packs/parse.js';
-import type {RulePack} from '../rule-packs/types.js';
 import {auditPack} from './audit.js';
 import type {PrepareResult} from './clone.js';
 import {expandTargets} from './expand.js';
@@ -28,7 +26,7 @@ import {
 	previewReconciliation,
 } from './preview.js';
 import type {RepoLister} from './repo-lister.js';
-import {unionPatterns} from './select.js';
+import {selectPacks, unionPatterns} from './select.js';
 import type {
 	PackLoadError,
 	PackLoader,
@@ -105,9 +103,6 @@ export async function runFromConfig(
 	options: RunConfigOptions,
 ): Promise<RunReport> {
 	const loaded = await deps.packs.load(options.packsDir);
-	const packByName = new Map(
-		loaded.packs.map(pack => [pack.manifest.name, pack]),
-	);
 
 	const repos: RepoOutcome[] = [];
 	const reconciled: {repo: string; result: ReconcileResult}[] = [];
@@ -133,30 +128,10 @@ export async function runFromConfig(
 			}
 		}
 
-		const resolvedNames = new Set<string>();
-		const missingPacks: string[] = [];
-		for (const name of target.rulePacks) {
-			if (!packByName.has(name)) {
-				missingPacks.push(name);
-				continue;
-			}
-			const resolved = resolveDependencies(loaded.packs, name);
-			if (resolved.errors.length > 0) {
-				missingPacks.push(name);
-				continue;
-			}
-			for (const resolvedName of resolved.order) {
-				resolvedNames.add(resolvedName);
-			}
-		}
-
-		const resolvedPacks: RulePack[] = [];
-		for (const name of resolvedNames) {
-			const pack = packByName.get(name);
-			if (pack) {
-				resolvedPacks.push(pack);
-			}
-		}
+		const {packs: resolvedPacks, missing: missingPacks} = selectPacks(
+			loaded.packs,
+			target.rulePacks,
+		);
 
 		const files = await deps.files.read(repoDir, unionPatterns(resolvedPacks));
 

@@ -129,3 +129,44 @@ test('buildAutoFixPrompt renders document-level errors without an index', t => {
 	t.true(prompt.includes('- document: no array found'));
 	t.false(prompt.includes('finding[-1]'));
 });
+
+// The audit layer turns these into the prompt/output token figures `estimate`
+// calibrates from, so they have to cover every attempt rather than the last.
+test('reports the characters sent and received on a single attempt', async t => {
+	const output = JSON.stringify([GOOD]);
+	const runner = queuedRunner([{ok: true, output}]);
+	const result = await runAuditWithAutoFix('prompt', MODEL, runner);
+	t.is(result.promptChars, 'prompt'.length);
+	t.is(result.outputChars, output.length);
+});
+
+test('accumulates characters across a retry', async t => {
+	const first = JSON.stringify([BAD]);
+	const second = JSON.stringify([GOOD]);
+	const runner = queuedRunner([
+		{ok: true, output: first},
+		{ok: true, output: second},
+	]);
+	const result = await runAuditWithAutoFix('prompt', MODEL, runner);
+
+	t.is(result.attempts, 2);
+	// Both responses counted, not just the one that validated.
+	t.is(result.outputChars, first.length + second.length);
+	// Both prompts counted, and the retry carried the correction section, so
+	// the total exceeds twice the original rather than matching it.
+	t.is(
+		result.promptChars,
+		(runner.prompts[0]?.length ?? 0) + (runner.prompts[1]?.length ?? 0),
+	);
+	t.true(result.promptChars > 'prompt'.length * 2);
+});
+
+test('a process failure is not retried and counts one exchange', async t => {
+	const runner = queuedRunner([
+		{ok: false, output: '', error: 'nanocoder missing'},
+	]);
+	const result = await runAuditWithAutoFix('prompt', MODEL, runner);
+	t.is(result.attempts, 1);
+	t.is(result.promptChars, 'prompt'.length);
+	t.is(result.outputChars, 0);
+});

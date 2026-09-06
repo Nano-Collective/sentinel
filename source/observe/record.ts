@@ -11,6 +11,7 @@ import type {
 	RepoRunRecord,
 	RunMode,
 	RunRecord,
+	RunUsage,
 	SeverityCounts,
 } from './types.js';
 
@@ -57,6 +58,21 @@ export function buildRunRecord(
 		totalFindings += repo.findings;
 	}
 
+	const usage: RunUsage = {
+		requests: 0,
+		durationMs: 0,
+		promptTokens: 0,
+		outputTokens: 0,
+	};
+	for (const repo of report.outcome.repos) {
+		for (const pack of repo.packs) {
+			usage.requests += pack.attempts;
+			usage.durationMs += pack.usage.durationMs;
+			usage.promptTokens += pack.usage.promptTokens;
+			usage.outputTokens += pack.usage.outputTokens;
+		}
+	}
+
 	const record: RunRecord = {
 		timestamp,
 		mode,
@@ -65,6 +81,7 @@ export function buildRunRecord(
 			repos: repos.length,
 			findings: totalFindings,
 			bySeverity: totalsBySeverity,
+			usage,
 		},
 		targetErrors: report.targetErrors,
 	};
