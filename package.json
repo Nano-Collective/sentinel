@@ -57,13 +57,16 @@
 		"test:security": "semgrep scan --config auto --error",
 		"format": "biome check --write .",
 		"format:check": "biome check .",
-		"prepare": "husky"
+		"prepare": "husky",
+		"changeset": "changeset",
+		"changeset:version": "changeset version"
 	},
 	"dependencies": {
 		"yaml": "^2.8.3"
 	},
 	"devDependencies": {
 		"@biomejs/biome": "^2.5.0",
+		"@changesets/cli": "^3.0.1",
 		"@types/node": "^25.9.3",
 		"ava": "^7.0.0",
 		"c8": "^11.0.0",
