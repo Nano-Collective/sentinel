@@ -1,6 +1,8 @@
 # Sentinel Roadmap
 
-Current version: **`0.1.0-alpha.3`** · No GitHub release cut yet · 96.19% coverage
+Current version: **`0.1.0-alpha.3`** · No GitHub release cut yet · 97% coverage
+
+Last reconciled against the repository on **2026-09-06**.
 
 This document is the path from the current alpha to v1, and from v1 to the v1.1
 that lets Sentinel audit the Nano Collective's own infrastructure. It is written
@@ -19,24 +21,50 @@ checker. That makes Sentinel's own correctness an operational dependency.
 
 | | Count |
 |---|---|
-| Open PRs | 3 (all `addyCooks`, 22–24 Aug, none draft) |
-| Open issues | 11 — 7 bugs, 4 features |
+| Open PRs | 4 — the phase 0–2 work below, in review |
+| Open issues | 10 — 6 bugs, 4 features |
 | Releases cut | **0** |
-| Coverage | 96.19% |
+| Coverage | ~97% |
 
-Release plumbing is already in place: `release.yml` triggers on push to `main`
-and publishes when `package.json`'s version is ahead of npm, moving the `latest`
-tag onto each prerelease until a stable version claims it (that was the whole
-content of `alpha.3`). **Cutting a release is a version bump plus a changelog
-entry** — there is no changesets ceremony in this repo, and none is needed
-before v1.
+**Phase 0 is complete.** All three of `addyCooks`' PRs merged (#12, #13, #14),
+and #9 was fixed along the way by #14 and closed. Phases 1 and 2 are written and
+in review as #22 and #23.
+
+Two issues have been raised since this roadmap was written and are placed below:
+**#16** (the type gate never typechecks specs) and **#17** (incremental scanning
+and the auto-resolution fix it requires, which supersedes the sketch in 3c).
+
+### Releasing — read this before cutting anything
+
+Release plumbing is in place: `release.yml` triggers on push to `main` and
+publishes when `package.json`'s version is ahead of npm, moving the `latest` tag
+onto each prerelease until a stable version claims it (that was the whole content
+of `alpha.3`).
+
+Since #19 the version bump goes through **changesets**, not a hand edit: each PR
+carries a changeset, `release-prepare.yml` accumulates them into a Version
+Packages PR, and merging that PR pushes the bump `release.yml` publishes.
+
+**#20 is a prerequisite for any of that.** Changesets was adopted without
+entering pre mode, so `changeset version` resolved `0.1.0-alpha.3` to **`0.1.0`**
+— the first Version PR merged would have shipped v1, claimed npm's `latest`, and
+skipped everything below in one merge. With `.changeset/pre.json` in place it
+bumps to `0.1.0-alpha.4` as intended.
+
+Consequently **cutting `1.0.0` is a deliberate two-step** — `changeset pre exit`
+then `changeset version` — and doing it early releases v1 by accident. See
+`.changeset/README.md`.
 
 ---
 
-## Phase 0 — Merge what is already open → `0.1.0-alpha.4`
+## Phase 0 — Merge what is already open → `0.1.0-alpha.4` ✅ merged
 
-Every open PR closes an open issue. This is the cheapest progress available and
-it takes the backlog from 11 issues to 8.
+Every open PR closed an open issue. This was the cheapest progress available and
+it took the backlog from 11 issues to 8.
+
+**All three are merged.** The release itself has not been cut — see the
+releasing note above; `0.1.0-alpha.4` now comes out of the Version Packages PR
+once #20 lands.
 
 | PR | Closes | Substance |
 |---|---|---|
@@ -44,24 +72,33 @@ it takes the backlog from 11 issues to 8.
 | **#13** reject non-integer and out-of-range line numbers | **#6** | `validateLineRange` gated on `typeof === 'number'`, letting `Infinity`, `NaN` and fractional values through — `start < 1 \|\| end < start` is false for all of them, so a hallucinated `line_range` validated cleanly |
 | **#14** `sentinel estimate` + per-run model instrumentation | **#1** (partial) | Enhancement 1 of #1. Incremental scanning (enhancement 2) is deliberately excluded — it needs schema sign-off on the cache |
 
-**Order:** #13 first (it is a correctness fix in the findings path that the other
-two do not touch), then #12, then #14.
+**Order taken:** #13 first (a correctness fix in the findings path the other two
+do not touch), then #12, then #14.
 
-**Then cut `0.1.0-alpha.4`:** bump `package.json`, write the `CHANGELOG.md`
-entry in the existing voice (what changed and why it mattered, not a commit
-list), merge to `main`. `release.yml` does the rest.
-
-**Also in this release:** issue **#9** — a stale header comment claims
-`sentinel run` is unimplemented. It is a one-line docs fix and it is actively
-misleading, so it should not wait for a later phase.
+**#9 is closed.** The stale header comment claiming `sentinel run` was
+unimplemented was rewritten by #14 when it added `sentinel estimate`, so no
+separate change was needed.
 
 ---
 
-## Phase 1 — The error-surfacing class → `0.1.0-alpha.5`
+## Phase 1 — The error-surfacing class → `0.1.0-alpha.5` 🔶 in review (#22)
 
 **This is the most important work in the roadmap.** Four of the seven open bugs
 are the same failure mode: an error is detected, collected, and then silently
 discarded. Fix them as one change, not four.
+
+**Written as #22**, which also fixes two further instances of the same class
+found while doing it — both worth recording, because they are the ones that
+would have kept the property untrue:
+
+- **The dashboard rendered `targetErrors` nowhere.** The field was persisted on
+  every run record and displayed on no surface, so a run in which every
+  repository failed to clone showed *"0 finding(s) across 0 repo(s)"* in the
+  same calm grey as a clean estate. This is the purest form of the green-report
+  failure below, on the surface an operator actually looks at.
+- **`RunRecord` did not carry pack load failures**, so the durable artifact
+  could not distinguish "nothing found" from "nothing ran" once the console
+  output was gone.
 
 The reason this is a priority rather than tidiness: Sentinel is being given the
 job of reporting whether an organisation's repos are correctly configured. The
@@ -153,7 +190,7 @@ swallowed.
 
 ---
 
-## Phase 2 — Remaining correctness → `0.1.0-alpha.6`
+## Phase 2 — Remaining correctness → `0.1.0-alpha.6` 🔶 in review (#23)
 
 ### #2 — `prepareRepo` accepts stale / partial clone directories
 
@@ -178,9 +215,14 @@ as current**.
 empty, and ideally that its remote matches the requested repo. On mismatch,
 either re-clone or return `ok: false` with a clear reason.
 
-*Note:* `clone.ts` sits inside a `/* c8 ignore */` block, so the 96.19% coverage
-figure does not cover this file. Whatever fix lands here needs tests that
-actually run.
+*Note:* `clone.ts` sits inside a `/* c8 ignore */` block, so the coverage figure
+does not cover this file. Whatever fix lands here needs tests that actually run.
+
+*Resolved in #23:* the decision logic is extracted into `inspectCheckout` behind
+an injected probe, leaving only the `gh` spawn and the real filesystem reads
+ignored. The refusal is deliberately non-destructive — an unusable directory is
+reported, never deleted, because the workspace can hold the operator's own
+checkouts.
 
 ### #3 — `--rule-pack` documented as repeatable but only one is read
 
@@ -191,6 +233,18 @@ local mode.
 *Fix:* collect repeated occurrences into an array and run all of them, or
 correct the documentation. Prefer the former; running two packs locally is a
 reasonable thing to want.
+
+### #16 — the type gate never typechecks specs 🔶 in review (#21)
+
+Raised after this roadmap was written, and placed here because it protects
+everything in phase 3: `tsconfig.json` excludes `source/**/*.spec.ts` so that
+`tsc && tsc-alias` keeps specs out of `dist/`, and `test:types` ran that same
+config — so the gate never looked at a single spec file. Specs are usually the
+first place a contract change shows up, and phase 3 changes contracts.
+
+Fixed by a `tsconfig.test.json` that drops only the exclude, with `test:types`
+running both configs. Adding a required field to an exported interface passes
+the old gate with 0 errors and fails the new one with 10.
 
 **Then cut `0.1.0-alpha.6`** — or roll this phase into the v1 release if it
 lands quickly, since only two items remain.
@@ -252,6 +306,21 @@ because the two behaviours are indistinguishable to a pack author until one
 fires.
 
 ### 3c. #1 (second half) — Incremental scanning
+
+**Now tracked as its own issue, [#17](https://github.com/Nano-Collective/sentinel/issues/17),
+which carries the agreed design and supersedes the sketch below.** Read that
+first; what follows is the schema reasoning it builds on.
+
+**#17 adds a blocker this section did not see, and it is the important part.**
+Incremental scanning breaks auto-resolution: `planReconciliation` sees only this
+run's findings and the currently open issues, so it cannot distinguish "the
+finding is gone" from "the file was never scanned". Any hash absent from a run
+bumps the miss counter, and at `resolveAfterMisses` the issue closes. On a daily
+schedule, skipping unchanged files therefore **silently closes real, unfixed
+findings after three runs** — the tool quietly reporting a vulnerability as fixed
+because it stopped looking. The scanned scope has to reach the planner so an
+out-of-scope issue is *held* rather than aged out, and that has to land in the
+same change as the cache, not after it.
 
 The half deliberately excluded from PR #14, pending sign-off on the cache
 schema. Rerunning a full audit when a handful of files changed is the dominant
@@ -346,13 +415,16 @@ commentary only.
 
 ## Summary
 
-| Phase | Release | Contents |
-|---|---|---|
-| **0** | `0.1.0-alpha.4` | Merge PRs #13, #12, #14 → closes #11, #6, #1(partial). Plus #9 docs fix |
-| **1** | `0.1.0-alpha.5` | Error surfacing as one change: #4, #5, #7, #8 |
-| **2** | `0.1.0-alpha.6` | #2 clone validation, #3 repeatable `--rule-pack` |
-| **3** | **`1.0.0`** | Whitepaper published, #10 severity enforcement, #1b incremental scanning + cache schema, release cut |
-| **4** | `1.1.0` | Conformance rule pack, PR review commentary |
+| Phase | Release | Contents | State |
+|---|---|---|---|
+| **0** | `0.1.0-alpha.4` | PRs #13, #12, #14 → closed #11, #6, #1(partial). #9 closed as already fixed | ✅ merged |
+| **1** | `0.1.0-alpha.5` | Error surfacing as one change: #4, #5, #7, #8 | 🔶 #22 |
+| **2** | `0.1.0-alpha.6` | #2 clone validation, #3 repeatable `--rule-pack`, #16 type gate | 🔶 #23, #21 |
+| **3** | **`1.0.0`** | Whitepaper published, #10 severity enforcement, #17 incremental scanning + cache schema + the held-issue fix, release cut | ⬜ |
+| **4** | `1.1.0` | Conformance rule pack, PR review commentary | ⬜ |
+
+Release plumbing itself is gated on **#20** — without it the first Version
+Packages PR ships `1.0.0` instead of `0.1.0-alpha.4`.
 
 The critical path runs through phase 1. Everything after it depends on Sentinel
 being a tool that tells you when something went wrong.
@@ -381,6 +453,20 @@ exists to deliver, though it still avoids the expensive part (the model calls).
 A hybrid — git diff where a usable checkout exists, hashes otherwise — is
 probably right, but it means the cache carries two provenance shapes and the
 `schemaVersion` field has to accommodate both from day one.
+
+*Narrowed by #23:* "a usable checkout" is no longer a guess. `inspectCheckout`
+now establishes that a workspace directory is a git checkout of the right
+repository before anything is audited, so the git-diff branch of the hybrid has
+a defined precondition to test rather than an assumption to make.
+
+**How does a held issue avoid being aged out?** (blocks 3c, from #17)
+
+`ExistingIssue` carries no path, and `findingHash` is opaque, so the planner
+cannot tell whether an issue falls inside the scanned scope. #17 proposes a
+structured `path` marker in issue bodies, with issues that predate it treated as
+always in scope so existing installs keep today's behaviour. Settle this with
+the cache schema, not after it — the two ship together or auto-resolution
+silently closes unfixed findings.
 
 **`severity_weighting` on mismatch: overwrite or reject?** (3b)
 
