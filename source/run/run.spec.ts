@@ -4,6 +4,7 @@ import type {
 	CreatedIssue,
 	CreateIssueParams,
 	ExistingIssue,
+	LabelFailure,
 	ReconcileClient,
 } from '../issues/types.js';
 import type {ModelRunner, ModelRunResult} from '../orchestrator/types.js';
@@ -82,7 +83,9 @@ function repoFiles(overrideText: string | null = null): RepoFiles {
 function fakeClient() {
 	const created: CreateIssueParams[] = [];
 	const client: ReconcileClient = {
-		async ensureLabels(): Promise<void> {},
+		async ensureLabels(): Promise<LabelFailure[]> {
+			return [];
+		},
 		async createIssue(params): Promise<CreatedIssue> {
 			created.push(params);
 			return {number: created.length, url: 'u'};
@@ -341,4 +344,82 @@ test('runLocal throws on an invalid pack file', async t => {
 		),
 		{message: /invalid rule pack/},
 	);
+});
+
+test('an unresolvable pack chain is reported apart from a missing pack', async t => {
+	const report = await runFromConfig(
+		config({targets: [{repo: 'my-org/a', rulePacks: ['p', 'ghost']}]}),
+		{
+			runner: findingRunner(),
+			files: repoFiles(),
+			// `p` is present but depends on a pack that is not.
+			packs: packLoader({packs: [pack('p', ['absent'])], errors: []}),
+			now: NOW,
+		},
+		OPTIONS,
+	);
+	const outcome = report.outcome.repos[0];
+	t.deepEqual(outcome?.missingPacks, ['ghost']);
+	t.is(outcome?.unresolvedPacks.length, 1);
+	t.is(outcome?.unresolvedPacks[0]?.pack, 'p');
+	// Neither pack ran.
+	t.is(outcome?.packs.length, 0);
+});
+
+test('pack load errors reach the run report', async t => {
+	const report = await runFromConfig(
+		config(),
+		{
+			runner: findingRunner(),
+			files: repoFiles(),
+			packs: packLoader({
+				packs: [pack('p')],
+				errors: [
+					{file: 'broken.md', errors: [{field: 'name', message: 'missing'}]},
+				],
+			}),
+			now: NOW,
+		},
+		OPTIONS,
+	);
+	t.is(report.packLoadErrors.length, 1);
+	t.is(report.packLoadErrors[0]?.file, 'broken.md');
+});
+
+test('a dry run carries pack-selection problems into the preview', async t => {
+	const {client} = fakeClient();
+	const report = await runFromConfig(
+		config({targets: [{repo: 'my-org/a', rulePacks: ['p', 'ghost']}]}),
+		{
+			runner: findingRunner(),
+			files: repoFiles(),
+			packs: packLoader({packs: [pack('p', ['absent'])], errors: []}),
+			client,
+			now: NOW,
+		},
+		{...OPTIONS, dryRun: true},
+	);
+	t.deepEqual(report.previews[0]?.missingPacks, ['ghost']);
+	t.is(report.previews[0]?.unresolvedPacks[0]?.pack, 'p');
+});
+
+test('runLocal reports no pack-selection problems', async t => {
+	const outcome = await runLocal(
+		'/cfg/rule-packs/p.md',
+		'/ws/a',
+		{provider: 'ollama', model: 'llama3.1'},
+		{
+			runner: findingRunner(),
+			files: {
+				async read(): Promise<SourceFile[]> {
+					return [{path: 'src/a.ts', content: 'const x = 1;'}];
+				},
+				async readText(): Promise<string | null> {
+					return '---\nname: p\nversion: 1.0.0\ndescription: d\ncategory: security\napplies_to:\n  paths: ["src/**/*.ts"]\n  languages: [typescript]\n---\nFlag bugs.\n';
+				},
+			},
+		},
+	);
+	t.deepEqual(outcome.repos[0]?.unresolvedPacks, []);
+	t.deepEqual(outcome.repos[0]?.missingPacks, []);
 });

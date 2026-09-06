@@ -86,6 +86,16 @@ export function buildRunRecord(
 		targetErrors: report.targetErrors,
 	};
 
+	if (report.packLoadErrors.length > 0) {
+		record.packLoadErrors = report.packLoadErrors.map(({file, errors}) => {
+			const detail =
+				errors.length > 0
+					? errors.map(error => `${error.field}: ${error.message}`).join('; ')
+					: 'could not be parsed';
+			return `${file} — ${detail}`;
+		});
+	}
+
 	if (report.filed) {
 		const filing: FilingSummary = {
 			filed: 0,

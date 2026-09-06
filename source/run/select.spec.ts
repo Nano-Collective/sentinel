@@ -60,9 +60,43 @@ test('selectPacks reports a name the directory does not have', t => {
 	t.is(packs.length, 1);
 });
 
-test('selectPacks reports a pack whose dependency chain does not resolve', t => {
-	const {packs, missing} = selectPacks([NAMED('app', ['absent'])], ['app']);
-	t.deepEqual(missing, ['app']);
+test('selectPacks reports an unresolvable chain apart from a missing pack', t => {
+	const {packs, missing, unresolved} = selectPacks(
+		[NAMED('app', ['absent'])],
+		['app'],
+	);
+	// `app` is in the directory. Reporting it as missing — which is what this
+	// did before — sends the reader to look for a file that is already there.
+	t.deepEqual(missing, []);
+	t.is(unresolved.length, 1);
+	t.is(unresolved[0]?.pack, 'app');
+	t.true(unresolved[0]?.errors.length ? true : false);
+	t.is(packs.length, 0);
+});
+
+test('selectPacks keeps missing and unresolved packs in separate channels', t => {
+	const {missing, unresolved} = selectPacks(
+		[NAMED('app', ['absent']), NAMED('fine')],
+		['app', 'gone', 'fine'],
+	);
+	t.deepEqual(missing, ['gone']);
+	t.deepEqual(
+		unresolved.map(entry => entry.pack),
+		['app'],
+	);
+});
+
+test('selectPacks reports a dependency cycle as unresolved, not missing', t => {
+	const {packs, missing, unresolved} = selectPacks(
+		[NAMED('a', ['b']), NAMED('b', ['a'])],
+		['a'],
+	);
+	t.deepEqual(missing, []);
+	t.is(unresolved[0]?.pack, 'a');
+	t.true(
+		unresolved[0]?.errors.some(error => error.message.includes('cycle')) ??
+			false,
+	);
 	t.is(packs.length, 0);
 });
 
