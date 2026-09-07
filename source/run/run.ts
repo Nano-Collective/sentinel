@@ -184,7 +184,11 @@ export async function runFromConfig(
 		// files reads only what it needs. Packs reading everything still share a
 		// single union read, exactly as before.
 		const plans = new Map<string, PackScanPlan>();
+		// Resolved once per pack and shared by the planning and recording steps,
+		// rather than re-walking the dependency graph for each.
+		const dependencies = new Map<string, RulePack[]>();
 		for (const pack of resolvedPacks) {
+			dependencies.set(pack.manifest.name, dependenciesOf(resolvedPacks, pack));
 			plans.set(
 				pack.manifest.name,
 				deps.cache
@@ -192,12 +196,18 @@ export async function runFromConfig(
 							pack,
 							repoDir,
 							cached: deps.cache.entryFor(repoName, pack.manifest.name),
-							dependencies: dependenciesOf(resolvedPacks, pack),
+							dependencies: dependencies.get(pack.manifest.name) ?? [],
 							incremental: target.incremental,
 							forced: options.full === true,
 							probe: deps.cache.probe,
 						})
-					: {kind: 'full', reason: 'incremental-disabled'},
+					: {
+							kind: 'full',
+							// Without a cache session there is nothing to compare against.
+							// Saying "not enabled for this target" would contradict a
+							// config that did enable it.
+							reason: target.incremental ? 'no-cache' : 'incremental-disabled',
+						},
 			);
 		}
 
@@ -251,7 +261,7 @@ export async function runFromConfig(
 					repoName,
 					repoDir,
 					pack,
-					dependenciesOf(resolvedPacks, pack),
+					dependencies.get(pack.manifest.name) ?? [],
 				);
 			}
 		}

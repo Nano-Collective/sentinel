@@ -14,9 +14,30 @@ import {matchesGlob} from '../rule-packs/glob.js';
 import type {RulePack} from '../rule-packs/types.js';
 import type {PackCacheEntry} from './types.js';
 
-/** A stable hash of a pack's audit body, for detecting an edited prompt. */
+/**
+ * A stable hash of everything about a pack that changes what an audit reads or
+ * reports: its prompt body, the paths it applies to, and the severities it
+ * declares authoritative.
+ *
+ * `applies_to` matters as much as the body. A pack widened in place to cover
+ * `.tsx` alongside `.ts`, without a version bump, would otherwise keep its
+ * cache entry, and every newly-applicable file would go on being skipped — a
+ * silent under-audit, which is the one outcome this feature may never
+ * produce.
+ */
 export function packBodyHash(pack: RulePack): string {
-	return createHash('sha256').update(pack.body).digest('hex').slice(0, 16);
+	const {appliesTo, severityWeighting, category} = pack.manifest;
+	const salient = JSON.stringify({
+		body: pack.body,
+		paths: [...appliesTo.paths].sort(),
+		languages: [...appliesTo.languages].sort(),
+		// Sorted so a reordered manifest is not read as a changed one.
+		severityWeighting: Object.entries(severityWeighting).sort(([a], [b]) =>
+			a < b ? -1 : a > b ? 1 : 0,
+		),
+		category,
+	});
+	return createHash('sha256').update(salient).digest('hex').slice(0, 16);
 }
 
 /**

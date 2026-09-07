@@ -42,6 +42,18 @@ function problemsOf(record: RunRecord): string[] {
 	return [...(record.packLoadErrors ?? []), ...record.targetErrors];
 }
 
+/**
+ * Packs that re-read everything on a target that asked for incremental
+ * scanning. Not a problem — the audit was complete, which is the safe outcome —
+ * but the operator's only durable signal that the setting they enabled is not
+ * doing anything, so it is shown rather than left to an expired step summary.
+ */
+function fullPassesOf(record: RunRecord): string[] {
+	return record.repos.flatMap(repo =>
+		(repo.fullPasses ?? []).map(note => `${repo.repo}: ${note}`),
+	);
+}
+
 function problemCell(record: RunRecord): string {
 	const count = problemsOf(record).length;
 	return count > 0
@@ -101,6 +113,14 @@ export function renderDashboard(records: RunRecord[]): string {
 		? `Latest run ${escapeHtml(latest.timestamp)} — ${latest.totals.findings} finding(s) across ${latest.totals.repos} repo(s).`
 		: 'No runs recorded yet.';
 	const banner = problemBanner(latest);
+	const fullPasses = latest ? fullPassesOf(latest) : [];
+	const fullPassNotice =
+		fullPasses.length === 0
+			? ''
+			: `<div class="notice">
+<strong>Incremental scanning: ${fullPasses.length} pack pass(es) re-read every file.</strong> The audit was complete — this is the safe outcome — but the setting is not saving anything for these.
+<ul>${fullPasses.map(note => `<li>${escapeHtml(note)}</li>`).join('')}</ul>
+</div>`;
 
 	return `<!doctype html>
 <html lang="en">
@@ -114,6 +134,8 @@ body { font-family: system-ui, sans-serif; background: #1a1b26; color: #a9b1d6; 
 h1 { color: #7aa2f7; margin: 0 0 .25rem; font-size: 1.4rem; }
 p.summary { color: #c0caf5; margin: 0 0 1.5rem; }
 div.scroll { overflow-x: auto; }
+div.notice { background: #232433; border-left: 3px solid #7dcfff; padding: .75rem 1rem; margin: 0 0 1.5rem; border-radius: 4px; color: #c0caf5; }
+div.notice ul { margin: .5rem 0 0; padding-left: 1.2rem; }
 table { border-collapse: collapse; width: 100%; font-size: .9rem; }
 th, td { padding: .5rem .6rem; text-align: left; white-space: nowrap; border-bottom: 1px solid #292e42; }
 th { color: #565f89; font-weight: 600; text-transform: uppercase; font-size: .72rem; letter-spacing: .04em; }
@@ -136,7 +158,7 @@ footer { margin-top: 1.5rem; color: #565f89; font-size: .8rem; }
 <body>
 <h1>🛡️ Sentinel</h1>
 <p class="summary">${summary}</p>
-${banner}
+${banner}${fullPassNotice}
 <div class="scroll">
 <table>
 <thead><tr>

@@ -73,7 +73,7 @@ It is **off by default and opt-in per target**, because it trades a complete re-
 **A pack re-reads everything whenever anything is uncertain.** Being wrong about needing to re-read costs some model time; being wrong about *not* needing to costs a missed finding. Those are not close, so a full pass happens when:
 
 - the target has no cached pass yet (the first run, always);
-- the pack's version or body changed — an edited prompt asks a different question, and every file has to answer it again;
+- the pack changed — its version, its prompt body, its `applies_to`, its `severity_weighting` or its `category`. A pack edited in place asks a different question, or asks it of different files, and either way the answers have to be redone. Notably this does **not** rely on you bumping the version: widening `applies_to` without a bump would otherwise leave the newly-applicable files skipped indefinitely;
 - a pack it `depends_on` changed, for the same reason: a dependency's body is part of this pack's prompt;
 - the cached commit is unreachable — a shallow clone, or a force-push that orphaned it. *Cannot tell* is not *nothing changed*;
 - `--full` was passed.

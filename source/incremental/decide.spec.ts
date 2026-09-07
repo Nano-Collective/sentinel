@@ -177,3 +177,41 @@ test('every full reason has a sentence', t => {
 		t.true(explainFullReason(reason).length > 0, reason);
 	}
 });
+
+test('widening applies_to invalidates the cache even without a version bump', t => {
+	// The silent under-audit this guards: a pack widened in place would keep its
+	// cache entry, and every newly-applicable file would go on being skipped.
+	// applies_to decides what gets read, so it has to be part of the identity.
+	const widened = pack({
+		appliesTo: {paths: ['**/*.ts', '**/*.tsx'], languages: ['typescript']},
+	});
+	const plan = decidePackScope(
+		input({
+			pack: widened,
+			cached: cached({bodyHash: packBodyHash(pack())}),
+		}),
+	);
+	t.is(plan.kind === 'full' ? plan.reason : '', 'pack-changed');
+});
+
+test('changing severity_weighting invalidates the cache', t => {
+	const reweighted = pack({severityWeighting: {'sql-injection': 'critical'}});
+	const plan = decidePackScope(
+		input({pack: reweighted, cached: cached({bodyHash: packBodyHash(pack())})}),
+	);
+	t.is(plan.kind === 'full' ? plan.reason : '', 'pack-changed');
+});
+
+test('reordering manifest fields is not a change', t => {
+	// A hash that moved with key order would force a full pass over a manifest
+	// nobody meaningfully edited, which trains people to distrust the cache.
+	const a = pack({severityWeighting: {b: 'high', a: 'low'}});
+	const b = pack({severityWeighting: {a: 'low', b: 'high'}});
+	t.is(packBodyHash(a), packBodyHash(b));
+});
+
+test('reordering applies_to paths is not a change', t => {
+	const a = pack({appliesTo: {paths: ['x.ts', 'y.ts'], languages: []}});
+	const b = pack({appliesTo: {paths: ['y.ts', 'x.ts'], languages: []}});
+	t.is(packBodyHash(a), packBodyHash(b));
+});

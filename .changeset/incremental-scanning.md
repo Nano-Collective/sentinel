@@ -16,15 +16,22 @@
   Every uncertain case reads everything, because the two mistakes are not the
   same size: being wrong about needing to re-read costs model time, being wrong
   about not needing to costs a missed finding. A pack re-reads in full when
-  there is no cached pass, when its version or body changed, when a pack it
-  `depends_on` changed, when the cached commit is unreachable (a shallow clone,
-  or a force-push that orphaned it), or when `--full` is passed.
+  there is no cached pass, when the pack changed, when a pack it `depends_on`
+  changed, when the cached commit is unreachable (a shallow clone, or a
+  force-push that orphaned it), or when `--full` is passed.
+
+  "The pack changed" covers its prompt body, `applies_to`, `severity_weighting`
+  and `category` as well as its version — deliberately not resting on an author
+  remembering to bump. Widening `applies_to` in place would otherwise leave
+  every newly-applicable file skipped indefinitely.
 
   - **A pack whose audit failed records nothing.** Advancing the cache after an
     errored pass would let the next run skip files on the strength of an audit
     that never happened.
-  - **The run report says which packs re-read everything, and why**, so a target
-    that opted in and got no speed-up explains itself rather than looking broken.
+  - **The run report, the durable run record and the dashboard all say which
+    packs re-read everything, and why**, so a target that opted in and got no
+    speed-up explains itself rather than looking broken. The report is a step
+    summary that expires; the record is what an operator still has a week later.
   - A repository matching several targets is incremental only if *every* one of
     them opted in, so an unrelated pattern cannot cause a target's files to be
     skipped.
