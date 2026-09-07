@@ -64,12 +64,27 @@ export interface PackOutcome {
 	usage: PackUsage;
 }
 
+/**
+ * A pack the target named that *is* in the rule-packs directory but whose
+ * `depends_on` chain could not be resolved — a missing dependency or a cycle.
+ *
+ * Distinct from a missing pack on purpose. Both stop the pack running, but they
+ * send the reader to different places: a missing pack is not on disk, whereas
+ * this one is sitting right there and its graph is wrong.
+ */
+export interface UnresolvedPack {
+	pack: string;
+	errors: RulePackError[];
+}
+
 /** All pack outcomes for one repository. */
 export interface RepoOutcome {
 	repo: string;
 	packs: PackOutcome[];
 	/** Packs named by the target but missing from the rule-packs directory. */
 	missingPacks: string[];
+	/** Packs present on disk whose `depends_on` chain failed to resolve. */
+	unresolvedPacks: UnresolvedPack[];
 }
 
 /** Everything one run produced. */

@@ -6,7 +6,13 @@
 import {findingHash} from '../dedup/hash.js';
 import type {ReconcileResult} from '../dedup/reconcile.js';
 import type {Finding} from '../findings/types.js';
-import type {PackOutcome, RepoOutcome, RunOutcome} from './types.js';
+import type {
+	PackLoadError,
+	PackOutcome,
+	RepoOutcome,
+	RunOutcome,
+	UnresolvedPack,
+} from './types.js';
 
 function findingSection(finding: Finding): string {
 	const lines = [
@@ -52,13 +58,41 @@ function rawBlock(raw: string | undefined): string {
 	return `\n\n<details><summary>Raw model output</summary>\n\n\`\`\`\n${capped}\n\`\`\`\n</details>`;
 }
 
-function repoSection(outcome: RepoOutcome): string {
-	const parts = [`## ${outcome.repo}`];
-	if (outcome.missingPacks.length > 0) {
+/**
+ * The two ways a named pack can fail to run, rendered apart. A pack with a
+ * broken `depends_on` graph used to be reported as "not in rule-packs/", which
+ * is false — it is on disk — and sent the reader hunting for a file rather than
+ * at the dependency error that actually stopped it.
+ */
+export function renderPackSelectionProblems(
+	missingPacks: string[],
+	unresolvedPacks: UnresolvedPack[],
+): string[] {
+	const parts: string[] = [];
+	if (missingPacks.length > 0) {
 		parts.push(
-			`> Missing packs (not in rule-packs/): ${outcome.missingPacks.join(', ')}`,
+			`> ⚠️ Missing packs (not in rule-packs/): ${missingPacks.join(', ')}`,
 		);
 	}
+	for (const {pack, errors} of unresolvedPacks) {
+		const detail = errors
+			.map(error => `${error.field}: ${error.message}`)
+			.join('; ');
+		parts.push(
+			`> ⚠️ Pack \`${pack}\` is in rule-packs/ but its depends_on chain did not resolve, so it did not run — ${detail}`,
+		);
+	}
+	return parts;
+}
+
+function repoSection(outcome: RepoOutcome): string {
+	const parts = [
+		`## ${outcome.repo}`,
+		...renderPackSelectionProblems(
+			outcome.missingPacks,
+			outcome.unresolvedPacks,
+		),
+	];
 	for (const pack of outcome.packs) {
 		parts.push(packSection(pack));
 	}
@@ -87,6 +121,83 @@ export function countFindings(run: RunOutcome): number {
 			total + repo.packs.reduce((sum, pack) => sum + pack.findings.length, 0),
 		0,
 	);
+}
+
+/**
+ * Run-level things that went wrong, as opposed to per-repo findings. These are
+ * the reasons a report can be short without the estate being clean.
+ */
+export interface RunProblems {
+	/** Rule packs that failed to parse, so never ran against anything. */
+	packLoadErrors: PackLoadError[];
+	/** Target-expansion and clone failures: repos that were never audited. */
+	targetErrors: string[];
+	/** Label creation failures, per repo, tolerated during filing. */
+	filingErrors: {repo: string; errors: string[]}[];
+}
+
+/** True if nothing went wrong, so the caller can omit the section entirely. */
+export function hasRunProblems(problems: RunProblems): boolean {
+	return (
+		problems.packLoadErrors.length > 0 ||
+		problems.targetErrors.length > 0 ||
+		problems.filingErrors.some(entry => entry.errors.length > 0)
+	);
+}
+
+/**
+ * Render the run-level problems as a Markdown section, or `''` when there are
+ * none. Appended to whichever report a run produced — full or dry-run preview —
+ * so no output path can present a partial audit as a complete one.
+ */
+export function renderRunProblems(problems: RunProblems): string {
+	if (!hasRunProblems(problems)) {
+		return '';
+	}
+
+	const lines = [
+		'## ⚠️ Problems',
+		'',
+		'This run did not complete cleanly. The findings above are incomplete.',
+		'',
+	];
+
+	if (problems.packLoadErrors.length > 0) {
+		lines.push(
+			`**Rule packs that failed to load (${problems.packLoadErrors.length}):**`,
+		);
+		for (const {file, errors} of problems.packLoadErrors) {
+			const detail =
+				errors.length > 0
+					? errors.map(error => `${error.field}: ${error.message}`).join('; ')
+					: 'could not be parsed';
+			lines.push(`- \`${file}\` — ${detail}`);
+		}
+		lines.push('');
+	}
+
+	if (problems.targetErrors.length > 0) {
+		lines.push(
+			`**Targets that could not be audited (${problems.targetErrors.length}):**`,
+		);
+		for (const error of problems.targetErrors) {
+			lines.push(`- ${error}`);
+		}
+		lines.push('');
+	}
+
+	for (const {repo, errors} of problems.filingErrors) {
+		if (errors.length === 0) {
+			continue;
+		}
+		lines.push(`**Filing problems on \`${repo}\` (${errors.length}):**`);
+		for (const error of errors) {
+			lines.push(`- ${error}`);
+		}
+		lines.push('');
+	}
+
+	return lines.join('\n').trimEnd();
 }
 
 /** Render a full run as a Markdown report. */

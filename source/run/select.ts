@@ -8,6 +8,7 @@
 
 import {resolveDependencies} from '../rule-packs/dependencies.js';
 import type {RulePack} from '../rule-packs/types.js';
+import type {UnresolvedPack} from './types.js';
 
 /** True if a rule-packs-relative path is an enabled pack file. */
 export function isEnabledPackPath(relativePath: string): boolean {
@@ -39,8 +40,15 @@ export function unionPatterns(packs: RulePack[]): string[] {
 /** The packs one target actually runs, and the names that did not resolve. */
 export interface SelectedPacks {
 	packs: RulePack[];
-	/** Named packs missing from the directory or with an unresolvable chain. */
+	/** Named packs that are not in the rule-packs directory at all. */
 	missing: string[];
+	/**
+	 * Named packs that *are* in the directory but whose `depends_on` chain could
+	 * not be resolved. Kept apart from `missing`: reporting a pack that exists as
+	 * "not in rule-packs/" sends the reader to look for a file that is already
+	 * there, and hides the dependency error that actually stopped it.
+	 */
+	unresolved: UnresolvedPack[];
 }
 
 /**
@@ -54,6 +62,7 @@ export function selectPacks(
 	const byName = new Map(available.map(pack => [pack.manifest.name, pack]));
 	const resolved = new Set<string>();
 	const missing: string[] = [];
+	const unresolved: UnresolvedPack[] = [];
 
 	for (const name of names) {
 		if (!byName.has(name)) {
@@ -62,7 +71,7 @@ export function selectPacks(
 		}
 		const chain = resolveDependencies(available, name);
 		if (chain.errors.length > 0) {
-			missing.push(name);
+			unresolved.push({pack: name, errors: chain.errors});
 			continue;
 		}
 		for (const resolvedName of chain.order) {
@@ -77,5 +86,5 @@ export function selectPacks(
 			packs.push(pack);
 		}
 	}
-	return {packs, missing};
+	return {packs, missing, unresolved};
 }

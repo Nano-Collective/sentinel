@@ -10,6 +10,7 @@ import type {
 	CreatedIssue,
 	CreateIssueParams,
 	ExistingIssue,
+	LabelFailure,
 	ReconcileClient,
 } from './types.js';
 
@@ -164,12 +165,30 @@ export const ghIssueClient: ReconcileClient = {
 		return created;
 	},
 
-	async ensureLabels({repo, labels}): Promise<void> {
+	async ensureLabels({repo, labels}): Promise<LabelFailure[]> {
 		// Best effort: a label that already exists or a transient failure must not
-		// abort the run — filing tolerates a missing label per issue.
+		// abort the run — filing tolerates a missing label per issue. But the
+		// failures are collected and returned rather than discarded, so the run
+		// summary can say what could not be created.
+		const failures: LabelFailure[] = [];
 		for (const label of labels) {
-			runGh(buildGhLabelArgs(repo, label));
+			try {
+				const result = runGh(buildGhLabelArgs(repo, label));
+				if (result.status !== 0) {
+					failures.push({
+						label,
+						error:
+							`gh label create failed (status ${result.status}): ${result.stderr}`.trim(),
+					});
+				}
+			} catch (error) {
+				failures.push({
+					label,
+					error: error instanceof Error ? error.message : String(error),
+				});
+			}
 		}
+		return failures;
 	},
 
 	async listIssues({repo, label}): Promise<ExistingIssue[]> {

@@ -71,4 +71,15 @@ export interface RunRecord {
 	filing?: FilingSummary;
 	/** Target-expansion / clone failures, carried for visibility. */
 	targetErrors: string[];
+	/**
+	 * Rule packs that failed to parse and therefore ran against nothing, as
+	 * `file — detail` lines. Optional: records written before runs carried this
+	 * have no such field, and an absent field is not the same as an empty one.
+	 *
+	 * A record that omits this cannot be told apart from a clean run, which is
+	 * the whole failure this release is about — the record is the durable
+	 * artifact, so a finding count of zero has to be readable as "nothing found"
+	 * or "nothing ran" from the record alone.
+	 */
+	packLoadErrors?: string[];
 }

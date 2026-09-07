@@ -128,10 +128,11 @@ export async function runFromConfig(
 			}
 		}
 
-		const {packs: resolvedPacks, missing: missingPacks} = selectPacks(
-			loaded.packs,
-			target.rulePacks,
-		);
+		const {
+			packs: resolvedPacks,
+			missing: missingPacks,
+			unresolved: unresolvedPacks,
+		} = selectPacks(loaded.packs, target.rulePacks);
 
 		const files = await deps.files.read(repoDir, unionPatterns(resolvedPacks));
 
@@ -153,7 +154,12 @@ export async function runFromConfig(
 			);
 		}
 
-		repos.push({repo: repoName, packs: packOutcomes, missingPacks});
+		repos.push({
+			repo: repoName,
+			packs: packOutcomes,
+			missingPacks,
+			unresolvedPacks,
+		});
 
 		if (!deps.client) {
 			continue;
@@ -199,7 +205,16 @@ export async function runFromConfig(
 						? `run error: ${outcome.runError}`
 						: `malformed output after ${outcome.attempts} attempt(s) (${outcome.errors.length} validation error(s))`,
 				}));
-			previews.push({repo: repoName, preview, failedPacks});
+			// Pack-selection problems travel with the preview too. A dry run that
+			// omitted them would report "none" in every group for a repo whose
+			// packs never ran, which reads as clean rather than as not audited.
+			previews.push({
+				repo: repoName,
+				preview,
+				failedPacks,
+				missingPacks,
+				unresolvedPacks,
+			});
 		}
 	}
 
@@ -258,5 +273,14 @@ export async function runLocal(
 		);
 	}
 
-	return {repos: [{repo: repoDir, packs: packOutcomes, missingPacks: []}]};
+	return {
+		repos: [
+			{
+				repo: repoDir,
+				packs: packOutcomes,
+				missingPacks: [],
+				unresolvedPacks: [],
+			},
+		],
+	};
 }

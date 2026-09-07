@@ -38,7 +38,7 @@ function pack(
 }
 
 function repo(name: string, packs: PackOutcome[]): RepoOutcome {
-	return {repo: name, packs, missingPacks: []};
+	return {repo: name, packs, missingPacks: [], unresolvedPacks: []};
 }
 
 function result(overrides: Partial<ReconcileResult> = {}): ReconcileResult {
@@ -223,4 +223,37 @@ test('records zeroed usage when nothing was audited', t => {
 test('recordFilename is filesystem-safe', t => {
 	t.is(recordFilename(TS), '2026-07-21T06-00-00-000Z.json');
 	t.false(recordFilename(TS).includes(':'));
+});
+
+test('a pack that failed to load is carried into the durable record', t => {
+	// The record is the artifact the dashboard reads back. Without this, a run
+	// where every pack failed to parse persists as findings: 0 and is
+	// indistinguishable from a clean estate long after the console output is
+	// gone.
+	const built = buildRunRecord(
+		report({
+			packLoadErrors: [
+				{file: 'broken.md', errors: [{field: 'name', message: 'missing'}]},
+			],
+		}),
+		TS,
+		'live',
+	);
+	t.deepEqual(built.packLoadErrors, ['broken.md — name: missing']);
+});
+
+test('a pack load error with no detail still records the file', t => {
+	const built = buildRunRecord(
+		report({packLoadErrors: [{file: 'broken.md', errors: []}]}),
+		TS,
+		'live',
+	);
+	t.deepEqual(built.packLoadErrors, ['broken.md — could not be parsed']);
+});
+
+test('a clean run records no packLoadErrors field at all', t => {
+	// Absent, not empty: an older record has no such field, and the reader must
+	// not have to tell "clean" from "written before this existed".
+	const built = buildRunRecord(report(), TS, 'live');
+	t.false('packLoadErrors' in built);
 });

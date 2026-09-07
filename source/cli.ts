@@ -21,8 +21,8 @@ import {
 import {dirname, join, resolve} from 'node:path';
 import {createInterface} from 'node:readline/promises';
 import {flagAll, flagBool, flagStr, parseFlags} from './args/flags.js';
-import {parseConfig} from './config/parse.js';
-import type {ModelConfig} from './config/types.js';
+import {loadConfigFrom} from './config/load.js';
+import type {ModelConfig, SentinelConfig} from './config/types.js';
 import {parseInitArgs} from './init/args.js';
 import {scaffold} from './init/scaffold.js';
 import type {InitOptions} from './init/types.js';
@@ -35,7 +35,13 @@ import {prepareRepo} from './run/clone.js';
 import {estimateRun, renderEstimate} from './run/estimate.js';
 import {renderPreview} from './run/preview.js';
 import {ghRepoLister} from './run/repo-lister.js';
-import {renderFilingLine, renderReport} from './run/report.js';
+import {
+	hasRunProblems,
+	type RunProblems,
+	renderFilingLine,
+	renderReport,
+	renderRunProblems,
+} from './run/report.js';
 import {runFromConfig, runLocal} from './run/run.js';
 import {fsPackLoader, fsRepoFiles} from './run/sources.js';
 
@@ -142,6 +148,20 @@ Options:
   --model <id>          Local mode model id (default llama3.1:70b)
   --dry-run             Audit but file no issues`;
 
+/** Load sentinel.yaml, printing every failure mode through one path. */
+function loadConfig(configPath: string): SentinelConfig | null {
+	const result = loadConfigFrom(configPath, path => readFileSync(path, 'utf8'));
+	for (const error of result.errors) {
+		console.error(error);
+	}
+	if (result.unreadable) {
+		console.error(
+			'Run `sentinel init` to scaffold one, or pass --config <path>.',
+		);
+	}
+	return result.config ?? null;
+}
+
 function writeReport(markdown: string, output: string | undefined): void {
 	if (output) {
 		writeFileSync(output, markdown);
@@ -216,11 +236,8 @@ async function runRun(argv: string[]): Promise<number> {
 
 	// Config-driven mode.
 	const configPath = flagStr(flags, 'config') ?? 'sentinel.yaml';
-	const parsed = parseConfig(readFileSync(configPath, 'utf8'));
-	if (!parsed.valid || !parsed.config) {
-		for (const error of parsed.errors) {
-			console.error(`config error — ${error.field}: ${error.message}`);
-		}
+	const config = loadConfig(configPath);
+	if (!config) {
 		return 1;
 	}
 
@@ -233,7 +250,7 @@ async function runRun(argv: string[]): Promise<number> {
 	const hasToken = Boolean(process.env.GITHUB_TOKEN);
 	const now = new Date().toISOString();
 	const report = await runFromConfig(
-		parsed.config,
+		config,
 		{
 			runner: nanocoderRunner,
 			files: fsRepoFiles,
@@ -261,11 +278,38 @@ async function runRun(argv: string[]): Promise<number> {
 
 	// Dry run with a token renders the grouped preview; otherwise the plain
 	// findings report.
-	const markdown =
+	const body =
 		dryRun && report.previews.length > 0
 			? renderPreview(report.previews)
 			: renderReport(report.outcome);
-	writeReport(markdown, output);
+
+	// Every problem the run collected goes into the artifact, not just the
+	// console — the report is what gets committed, attached to the step summary
+	// and read later, and a report that omits them presents a partial audit as a
+	// complete one.
+	const problems: RunProblems = {
+		packLoadErrors: report.packLoadErrors,
+		targetErrors: report.targetErrors,
+		filingErrors: report.reconciled.map(({repo: repoName, result}) => ({
+			repo: repoName,
+			errors: result.errors,
+		})),
+	};
+	const problemsSection = renderRunProblems(problems);
+	writeReport(
+		problemsSection ? `${body}\n\n${problemsSection}\n` : body,
+		output,
+	);
+
+	for (const {file, errors} of report.packLoadErrors) {
+		const detail =
+			errors.length > 0
+				? errors.map(error => `${error.field}: ${error.message}`).join('; ')
+				: 'could not be parsed';
+		console.error(
+			`rule pack: ${file} failed to load and did not run — ${detail}`,
+		);
+	}
 
 	for (const error of report.targetErrors) {
 		console.error(`target: ${error}`);
@@ -300,6 +344,20 @@ async function runRun(argv: string[]): Promise<number> {
 			);
 		}
 	}
+
+	// The last line the operator reads. A run that ends on the filing summary
+	// alone looks successful whatever went wrong earlier in the output.
+	if (hasRunProblems(problems)) {
+		const counts = [
+			report.packLoadErrors.length > 0 &&
+				`${report.packLoadErrors.length} rule pack(s) failed to load`,
+			report.targetErrors.length > 0 &&
+				`${report.targetErrors.length} target(s) could not be audited`,
+		].filter((part): part is string => typeof part === 'string');
+		console.error(
+			`\n⚠️  This audit is incomplete${counts.length > 0 ? `: ${counts.join(', ')}` : ''}. See the Problems section of the report.`,
+		);
+	}
 	return 0;
 }
 
@@ -330,16 +388,13 @@ async function runEstimate(argv: string[]): Promise<number> {
 	const flags = parseFlags(argv);
 
 	const configPath = flagStr(flags, 'config') ?? 'sentinel.yaml';
-	const parsed = parseConfig(readFileSync(configPath, 'utf8'));
-	if (!parsed.valid || !parsed.config) {
-		for (const error of parsed.errors) {
-			console.error(`config error — ${error.field}: ${error.message}`);
-		}
+	const config = loadConfig(configPath);
+	if (!config) {
 		return 1;
 	}
 
 	const estimate = await estimateRun(
-		parsed.config,
+		config,
 		{
 			files: fsRepoFiles,
 			packs: fsPackLoader,
