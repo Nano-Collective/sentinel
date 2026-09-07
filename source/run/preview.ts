@@ -28,6 +28,11 @@ export interface DryRunPreview {
 	suppressedByLabel: Finding[];
 	/** Open issues a live run would auto-resolve as stale. */
 	wouldResolve: number;
+	/**
+	 * Open issues a live run would leave alone because it did not read their
+	 * file. Zero whenever the run read everything.
+	 */
+	wouldHold: number;
 }
 
 /** Compute the dry-run preview for one repo's findings. */
@@ -63,6 +68,7 @@ export function previewReconciliation(
 		suppressedByOverride,
 		suppressedByLabel: plan.suppressed,
 		wouldResolve: plan.toResolve.length,
+		wouldHold: plan.held.length,
 	};
 }
 
@@ -141,6 +147,12 @@ export function renderPreview(previews: PreviewEntry[]): string {
 				group('Suppressed by a prior dismissal', preview.suppressedByLabel),
 				'',
 				`**Would auto-resolve:** ${preview.wouldResolve} stale issue(s)`,
+				...(preview.wouldHold > 0
+					? [
+							'',
+							`**Would hold:** ${preview.wouldHold} open issue(s) whose file this run did not read — neither refreshed nor aged`,
+						]
+					: []),
 				failureBlock(failedPacks),
 			].join('\n'),
 		);

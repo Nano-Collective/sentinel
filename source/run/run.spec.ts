@@ -1,5 +1,6 @@
 import test from 'ava';
 import type {SentinelConfig} from '../config/types.js';
+import {readMarker} from '../dedup/markers.js';
 import type {
 	CreatedIssue,
 	CreateIssueParams,
@@ -493,4 +494,42 @@ test('runLocal reports no pack-selection problems', async t => {
 	);
 	t.deepEqual(outcome.repos[0]?.unresolvedPacks, []);
 	t.deepEqual(outcome.repos[0]?.missingPacks, []);
+});
+
+test('a filed issue is attributed to the pack that produced it', async t => {
+	// The integration proof that the plumbing is connected: the pack name only
+	// exists in the per-pack outcomes, and the findings are flat by the time
+	// reconciliation sees them. If the run does not carry the attribution across
+	// that flattening, every issue files unmarked and every later partial run
+	// holds everything forever.
+	const {client, created} = fakeClient();
+	await runFromConfig(
+		config(),
+		{
+			runner: findingRunner(),
+			files: repoFiles(),
+			packs: packLoader({packs: [pack('p')], errors: []}),
+			client,
+			now: NOW,
+		},
+		OPTIONS,
+	);
+	t.is(readMarker(created[0]?.body ?? '', 'pack'), 'p');
+	t.not(readMarker(created[0]?.body ?? '', 'path'), null);
+});
+
+test('a config-driven run holds nothing, because it reads everything', async t => {
+	const {client} = fakeClient();
+	const report = await runFromConfig(
+		config(),
+		{
+			runner: findingRunner(),
+			files: repoFiles(),
+			packs: packLoader({packs: [pack('p')], errors: []}),
+			client,
+			now: NOW,
+		},
+		OPTIONS,
+	);
+	t.is(report.reconciled[0]?.result.held, 0);
 });

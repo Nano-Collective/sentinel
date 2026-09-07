@@ -134,6 +134,7 @@ export function renderFilingLine(
 		`${repo}: filed ${result.created.length}`,
 		`touched ${result.touched}`,
 		`aged ${result.incremented}`,
+		`held ${result.held}`,
 		`suppressed ${result.suppressed}`,
 		`suppressed-by-override ${result.suppressedByOverride}`,
 		`resolved ${result.resolved}`,

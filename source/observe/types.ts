@@ -52,6 +52,16 @@ export interface FilingSummary {
 	suppressed: number;
 	suppressedByOverride: number;
 	resolved: number;
+	/**
+	 * Open issues left untouched because the run did not read their file.
+	 *
+	 * Optional because records written before incremental scanning existed have
+	 * no such field, and absent is not the same as zero: a record without it
+	 * cannot tell you whether the run held nothing or was simply too old to know.
+	 * The record is the durable artifact, so that distinction has to survive in
+	 * it — the same reason `packLoadErrors` is optional rather than defaulted.
+	 */
+	held?: number;
 }
 
 /** A committed record of one Sentinel run. */

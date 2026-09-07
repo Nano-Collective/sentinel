@@ -8,7 +8,11 @@
 
 import type {RepoOverride, SentinelConfig} from '../config/types.js';
 import {type Finding, meetsSeverityThreshold} from '../findings/types.js';
-import {buildIssueContent, targetRepoFor} from '../issues/file.js';
+import {
+	buildIssueContent,
+	targetRepoFor,
+	withScopeMarkers,
+} from '../issues/file.js';
 import type {
 	CreatedIssue,
 	FilingContext,
@@ -22,6 +26,24 @@ import {
 	SUPPRESSION_LABELS,
 } from './plan.js';
 
+/**
+ * Options for the executor. Extends the planner's with the one thing only the
+ * executor needs: which pack produced each finding, so the issues it files
+ * carry the marker a later partial run reads back.
+ */
+export interface ReconcileExecOptions extends ReconcileOptions {
+	/**
+	 * The pack each finding came from, keyed by the finding object itself.
+	 *
+	 * Identity, not value: the findings handed to this function are the same
+	 * objects the run collected from each pack outcome (the override and
+	 * threshold steps filter, they do not copy). A finding missing from the map
+	 * simply files without a `pack` marker, which is the safe direction — an
+	 * unattributable issue is held on a partial run rather than aged out.
+	 */
+	packOfFinding?: ReadonlyMap<Finding, string>;
+}
+
 /** A summary of what one reconcile run did. */
 export interface ReconcileResult {
 	targetRepo: string;
@@ -29,6 +51,13 @@ export interface ReconcileResult {
 	touched: number;
 	incremented: number;
 	resolved: number;
+	/**
+	 * Open issues left alone because this run did not read their file. Counted
+	 * separately from `incremented` on purpose: an aged issue is one Sentinel
+	 * looked for and did not find, a held issue is one it never looked for, and
+	 * collapsing them would hide exactly the distinction this exists to make.
+	 */
+	held: number;
 	/** Findings suppressed by a label-closed issue (dedup layer). */
 	suppressed: number;
 	/** Findings removed by the per-repo override's suppress rules. */
@@ -66,7 +95,7 @@ export async function reconcileFindings(
 	client: ReconcileClient,
 	context: FilingContext,
 	now: string,
-	options: ReconcileOptions = {},
+	options: ReconcileExecOptions = {},
 	override?: RepoOverride,
 ): Promise<ReconcileResult> {
 	const targetRepo = targetRepoFor(config, context);
@@ -105,7 +134,10 @@ export async function reconcileFindings(
 
 	const created: CreatedIssue[] = [];
 	for (const finding of plan.toCreate) {
-		const content = buildIssueContent(finding, config, context);
+		const content = buildIssueContent(finding, config, {
+			...context,
+			pack: options.packOfFinding?.get(finding) ?? context.pack,
+		});
 		try {
 			created.push(
 				await client.createIssue({
@@ -122,12 +154,20 @@ export async function reconcileFindings(
 	}
 
 	let touched = 0;
-	for (const {issue} of plan.toTouch) {
+	for (const {issue, finding} of plan.toTouch) {
 		await tolerate(errors, `touch #${issue.number}`, async () => {
+			// Backfill the scope markers while we are already rewriting the body.
+			// This is what migrates issues filed before the markers existed: the
+			// first run after an upgrade reads every file, so every issue whose
+			// finding still recurs is touched here and is marked before any later
+			// run is in a position to skip anything.
 			await client.updateIssue({
 				repo: targetRepo,
 				number: issue.number,
-				body: trackedBody(issue.body, now),
+				body: withScopeMarkers(trackedBody(issue.body, now), finding, {
+					...context,
+					pack: options.packOfFinding?.get(finding) ?? context.pack,
+				}),
 			});
 			touched++;
 		});
@@ -165,6 +205,7 @@ export async function reconcileFindings(
 		touched,
 		incremented,
 		resolved,
+		held: plan.held.length,
 		suppressed: plan.suppressed.length,
 		suppressedByOverride: overrideSuppressed.length,
 		errors,

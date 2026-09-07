@@ -62,6 +62,20 @@ The **line range is deliberately excluded** from the hash. LLMs report slightly 
 
 A later run that produces the same finding **updates the existing issue's last-seen timestamp** instead of opening a duplicate. A finding that stops appearing across N consecutive runs is marked resolved automatically.
 
+### Auto-resolution only counts runs that looked
+
+"The finding is gone" and "the file was not read" arrive at the planner looking identical — in both cases the finding is simply absent. They mean opposite things, and treating the second as the first is how an audit tool ends up reporting a vulnerability as fixed because it stopped looking.
+
+So Sentinel records what each run actually read, and an open issue whose file was not read this run is **held**: neither refreshed nor aged, its miss counter left exactly where it was. Holding is recoverable — the issue stays open until a run reads the file again — where auto-closing is not.
+
+The scope is tracked **per rule pack**, because packs do not read the same files. If one pack skipped `src/db.ts` while another read it, an issue the first pack filed against that file was not re-examined, even though something looked at it.
+
+Held issues are counted separately from aged ones in the run summary, the run record and the dashboard. `aged` means Sentinel looked and did not find; `held` means it did not look. Collapsing them would hide the distinction this exists to draw.
+
+Today every run reads every file, so `held` is always zero. It becomes meaningful with [incremental scanning](https://github.com/Nano-Collective/sentinel/issues/17), which is what makes skipping files safe rather than quietly destructive.
+
+Issues filed before Sentinel recorded this carry no file marker. They keep exactly their old behaviour while runs read everything, and they are marked the next time their finding recurs — which happens before any file is skipped, because the first run in a repository always reads everything.
+
 ## Suppression
 
 False positives are inherent to any LLM-driven audit. Sentinel does not try to eliminate them before release — it makes them cheap to dismiss, the same way a reviewer marks a comment resolved. There are three layers, in increasing specificity:
@@ -78,10 +92,10 @@ Reach for the least specific layer that solves the problem. A one-off wrong find
 Every layer is counted in the per-repo run summary, so you can see which one is doing the work:
 
 ```
-myorg/myrepo: filed 3, touched 5, aged 2, suppressed 1, suppressed-by-override 0, resolved 0
+myorg/myrepo: filed 3, touched 5, aged 2, held 0, suppressed 1, suppressed-by-override 0, resolved 0
 ```
 
-`touched` is layer 1 — an existing issue matched instead of a duplicate being filed. `suppressed` is layer 2, findings silenced by an issue carrying one of the `sentinel:false-positive` / `sentinel:wontfix` / `sentinel:accepted` labels. The label is what counts, not the close — an issue left open with a suppression label on it suppresses too, so a `wontfix` you never closed still shows up here. `suppressed-by-override` is layer 3, findings the audited repo's own `sentinel.yaml` removed. `aged` is the number of open issues that moved one run closer to auto-resolution. Counters print even when zero — a zero is the signal that a layer is not firing, though read it alongside the errors printed underneath: an issue update that failed is reported as an error and is not counted here, so a run with errors can under-report. The same numbers are written to the [run record](../workflow/index.md#observability-and-run-history) and shown in the dashboard, so a scheduled run stays triageable after the fact.
+`touched` is layer 1 — an existing issue matched instead of a duplicate being filed. `suppressed` is layer 2, findings silenced by an issue carrying one of the `sentinel:false-positive` / `sentinel:wontfix` / `sentinel:accepted` labels. The label is what counts, not the close — an issue left open with a suppression label on it suppresses too, so a `wontfix` you never closed still shows up here. `suppressed-by-override` is layer 3, findings the audited repo's own `sentinel.yaml` removed. `aged` is the number of open issues that moved one run closer to auto-resolution, and `held` the number left untouched because this run did not read their file. Counters print even when zero — a zero is the signal that a layer is not firing, though read it alongside the errors printed underneath: an issue update that failed is reported as an error and is not counted here, so a run with errors can under-report. The same numbers are written to the [run record](../workflow/index.md#observability-and-run-history) and shown in the dashboard, so a scheduled run stays triageable after the fact.
 
 ## Honest about false positives
 

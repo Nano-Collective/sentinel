@@ -89,6 +89,14 @@ export interface FilingContext {
 	configRepo?: string;
 	/** The version of the rule pack that produced the finding, for the body. */
 	packVersion?: string;
+	/**
+	 * The name of the rule pack that produced the finding. Written into the issue
+	 * as a marker so a later, partial run can tell whether this issue's file was
+	 * one that pack actually read — see `dedup/scope.ts`. Absent when the caller
+	 * cannot attribute the finding to a pack, which leaves the issue unmarked and
+	 * therefore held rather than aged out on any run that skipped files.
+	 */
+	pack?: string;
 }
 
 /** A finding paired with the issue it was filed as. */

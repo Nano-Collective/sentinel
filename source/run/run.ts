@@ -12,6 +12,8 @@ import {join} from 'node:path';
 import {parseRepoOverride} from '../config/repo-override.js';
 import type {RepoOverride, SentinelConfig} from '../config/types.js';
 import {type ReconcileResult, reconcileFindings} from '../dedup/reconcile.js';
+import {fullScope} from '../dedup/scope.js';
+import type {Finding} from '../findings/types.js';
 import {targetRepoFor} from '../issues/file.js';
 import type {FilingContext, ReconcileClient} from '../issues/types.js';
 import type {AutoFixOptions} from '../orchestrator/auto-fix.js';
@@ -165,6 +167,20 @@ export async function runFromConfig(
 			continue;
 		}
 		const findings = packOutcomes.flatMap(outcome => outcome.findings);
+		// Which pack produced each finding, and what each pack read. Both are
+		// known here and nowhere downstream: `findings` is flat by the time it
+		// reaches reconciliation, and the flattening is what loses the pack.
+		const packOfFinding = new Map<Finding, string>();
+		for (const outcome of packOutcomes) {
+			for (const finding of outcome.findings) {
+				packOfFinding.set(finding, outcome.pack);
+			}
+		}
+		// Every pack read everything it applies to: this path does not skip files
+		// yet, so the scope is complete and reconciliation is unchanged. The
+		// plumbing lands first so that the incremental cache cannot be introduced
+		// without it.
+		const scope = fullScope(packOutcomes.map(outcome => outcome.pack));
 		const override = await readOverride(deps.files, repoDir);
 		const context: FilingContext = {
 			auditedRepo: repoName,
@@ -178,7 +194,11 @@ export async function runFromConfig(
 				deps.client,
 				context,
 				deps.now,
-				{resolveAfterMisses: options.resolveAfterMisses},
+				{
+					resolveAfterMisses: options.resolveAfterMisses,
+					scope,
+					packOfFinding,
+				},
 				override,
 			);
 			reconciled.push({repo: repoName, result});
@@ -195,6 +215,7 @@ export async function runFromConfig(
 				override,
 				{
 					resolveAfterMisses: options.resolveAfterMisses,
+					scope,
 				},
 			);
 			const failedPacks: PackFailure[] = packOutcomes

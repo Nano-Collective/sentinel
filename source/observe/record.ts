@@ -105,6 +105,7 @@ export function buildRunRecord(
 			suppressedByOverride: 0,
 			resolved: 0,
 		};
+		let held = 0;
 		for (const {result} of report.reconciled) {
 			filing.filed += result.created.length;
 			filing.touched += result.touched;
@@ -112,6 +113,13 @@ export function buildRunRecord(
 			filing.suppressed += result.suppressed;
 			filing.suppressedByOverride += result.suppressedByOverride;
 			filing.resolved += result.resolved;
+			held += result.held;
+		}
+		// Only recorded when something was actually held. A run that read every
+		// file writes no `held` key, so the field means "this run skipped files
+		// and here is what that cost" rather than a zero on every record.
+		if (held > 0) {
+			filing.held = held;
 		}
 		record.filing = filing;
 	}
