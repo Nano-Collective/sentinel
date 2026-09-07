@@ -22,14 +22,24 @@ checker. That makes Sentinel's own correctness an operational dependency.
 | | Count |
 |---|---|
 | Open PRs | 0 |
-| Open issues | **2 — #1 and #17, both incremental scanning. No open bugs.** |
-| Releases cut | **5**, all prereleases; latest `0.1.0-alpha.4` |
-| Coverage | ~97% |
+| Open issues | **0.** |
+| Releases cut | **6**, all prereleases; latest `0.1.0-alpha.5` |
+| Coverage | ~97.6% |
 
-**Phases 0, 1 and 2 are all merged**, and `0.1.0-alpha.4` shipped on
-2026-09-07 carrying them. **Phase 3 is two-thirds done**: the whitepaper is
-published and #10 is merged. The bug backlog is empty — what remains before
-`1.0.0` is #17 (with #1, which it supersedes) and cutting the release.
+**Phases 0, 1, 2 and 3 are all merged.** The whitepaper is published, #10
+(severity enforcement) shipped in `0.1.0-alpha.5`, and #17 landed as two PRs:
+**#34** made auto-resolution aware of what a run actually read, and **#36** added
+the incremental cache on top of it. #1 is closed as superseded — both its halves
+now exist.
+
+**The only thing between here and `1.0.0` is cutting the release.**
+
+One thing to know before doing that, verified rather than assumed: on today's
+`main`, `changeset pre exit` followed by `changeset version` produces **`0.1.0`,
+not `1.0.0`** — every changeset in the alpha series is a `patch`. Shipping
+`1.0.0` needs a deliberate `major` changeset. Exiting pre mode does correctly
+roll every alpha entry into one consolidated `0.1.0` changelog section; nothing
+is lost.
 
 *Correction:* earlier versions of this document said no GitHub release had been
 cut and put the count at zero. That was wrong when written — `v0.1.0-alpha.0`
@@ -40,7 +50,7 @@ true and is what phase 3 is for.
 Two issues raised after this roadmap was first written are placed below: **#16**
 (the type gate never typechecked specs — fixed in #21) and **#17** (incremental
 scanning and the auto-resolution fix it requires, which supersedes the sketch in
-3c).
+3c). Both are now closed.
 
 ### Releasing — read this before cutting anything
 
@@ -342,11 +352,40 @@ value wins too. Two things worth carrying forward:
 
 Documented in `docs/rule-packs/index.md` as authoritative rather than advisory.
 
-### 3c. #1 (second half) — Incremental scanning
+### 3c. #1 (second half) — Incremental scanning ✅ shipped
 
-**Now tracked as its own issue, [#17](https://github.com/Nano-Collective/sentinel/issues/17),
-which carries the agreed design and supersedes the sketch below.** Read that
-first; what follows is the schema reasoning it builds on.
+**Shipped as two PRs, deliberately split.** #17 asked for the auto-resolution
+fix and the cache in one change; the risk it guarded against was a cache landing
+*without* the fix, and doing the fix first inverts that and carries none of it.
+
+- **#34 — scope-aware reconciliation.** A run carries what it read; an open
+  issue whose file was not read is *held*, its miss counter untouched. No
+  behavioural change on its own, because every run still read everything.
+- **#36 — the cache.** `incremental: true` per target, off by default.
+
+**Two decisions differ from what this section proposed, both deliberate.**
+
+**The cache is a separate artifact, not an extension of `RunRecord`.** This
+section preferred folding it in, on the grounds that a second store invites
+drift. The two turned out to want opposite shapes: `RunRecord` is append-only
+history, one file per run, while the cache is *current state* — a single file,
+overwritten. Reconstructing "what did pack X last complete on repo Y" from an
+append-only log means scanning and merging records while skipping the dry runs
+and the failed passes, and a dry run writes a record but must not write cache
+state. Two artifacts with different lifecycles are cheaper than one with two
+lifecycles. The cache carries its own `version` field, and an unrecognised
+version is discarded rather than trusted.
+
+**`RunRecord` still has no `schemaVersion`, and should get one.** That
+recommendation was tied to `RunRecord` becoming the cache, so it did not land
+here — but the underlying point stands on its own: the dashboard reads every
+historical record back, and this release added two more optional fields to it
+(`filing.held`, `repos[].fullPasses`). Those are additive and safely absent, but
+the reader is still distinguishing record shapes by which keys happen to exist.
+**Worth doing before `1.0.0`** for the reason below — it is free on alpha and a
+migration afterwards.
+
+What follows is the original reasoning, kept for the record.
 
 **#17 adds a blocker this section did not see, and it is the important part.**
 Incremental scanning breaks auto-resolution: `planReconciliation` sees only this
@@ -457,7 +496,7 @@ commentary only.
 | **0** | `0.1.0-alpha.4` | PRs #13, #12, #14 → closed #11, #6, #1(partial). #9 closed as already fixed | ✅ merged |
 | **1** | shipped in `alpha.4` | Error surfacing as one change: #4, #5, #7, #8 | ✅ #22 |
 | **2** | shipped in `alpha.4` | #2 clone validation, #3 repeatable `--rule-pack`, #16 type gate | ✅ #23, #21 |
-| **3** | **`1.0.0`** | ✅ whitepaper published · ✅ #10 severity enforcement (#30) · ⬜ #17 incremental scanning + cache schema + the held-issue fix · ⬜ release cut | 🔶 |
+| **3** | **`1.0.0`** | ✅ whitepaper published · ✅ #10 severity enforcement (#30) · ✅ #17 held-issue fix (#34) + incremental cache (#36) · ⬜ `RunRecord.schemaVersion` · ⬜ release cut | 🔶 |
 | **4** | `1.1.0` | Conformance rule pack, PR review commentary | ⬜ |
 
 Phases 1 and 2 were folded into a single release rather than the separate
@@ -498,17 +537,40 @@ now establishes that a workspace directory is a git checkout of the right
 repository before anything is audited, so the git-diff branch of the hybrid has
 a defined precondition to test rather than an assumption to make.
 
-**How does a held issue avoid being aged out?** (blocks 3c, from #17)
+**How does a held issue avoid being aged out?** ✅ *settled in #34*
 
-`ExistingIssue` carries no path, and `findingHash` is opaque, so the planner
-cannot tell whether an issue falls inside the scanned scope. #17 proposes a
-structured `path` marker in issue bodies, with issues that predate it treated as
-always in scope so existing installs keep today's behaviour. Settle this with
-the cache schema, not after it — the two ship together or auto-resolution
-silently closes unfixed findings.
+Filed issues carry `pack` and `path` markers. **Both**, not just `path` as #17
+proposed: scope has to be tracked per pack, because packs do not read the same
+files, and a repo-wide scope would call a file "scanned" for a pack that never
+opened it.
 
-**`severity_weighting` on mismatch: overwrite or reject?** (3b)
+**The migration answer changed, and the reason is worth keeping.** #17 suggested
+treating an unmarked issue as always in scope, since "the marker backfills
+naturally as issues are touched". That has a hole: **an issue is only touched
+when its finding recurs, which requires its file to be read.** With incremental
+scanning on, an issue in an unchanged file is never touched, never backfills,
+and ages out in three runs — the issues the migration leaves behind are exactly
+the ones at risk.
 
-Overwrite is recommended above and in the issue. Worth confirming, because the
-two behaviours are indistinguishable to a pack author until one fires, and the
-choice has to be documented either way.
+So the unmarked case splits by run type: **scanned** on a complete run (which is
+byte-identical to the old behaviour, and what made #34 a no-op), **held** on a
+partial one. The "held forever" worry that motivated the original suggestion is
+bounded by an invariant: the cache cannot exist on the first run, so that run
+reads everything and marks every issue that survives it before any file is ever
+skipped.
+
+**How does incremental scanning detect change?** ✅ *settled in #36*
+
+Git diff against the recorded commit, with **no** content-hashing fallback. The
+hybrid this section reached for was not needed: every branch that cannot produce
+a trustworthy diff reads everything instead, which is both simpler and the safe
+direction. `changedSince` returns `null` for an unreachable commit — a shallow
+clone, or a force-push that orphaned it — and *cannot tell* is never allowed to
+collapse into *nothing changed*. The cache therefore carries one provenance
+shape, not two.
+
+**`severity_weighting` on mismatch: overwrite or reject?** ✅ *settled in #30*
+
+Shipped as overwrite, in both directions. A finding can be entirely accurate and
+still carry a guessed severity, so rejecting would discard real work to re-derive
+an answer the manifest already holds. Documented in `docs/rule-packs/index.md`.
