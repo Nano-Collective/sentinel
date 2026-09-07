@@ -1,0 +1,8 @@
+{
+	// Type checking only — never built. The base config excludes specs so that
+	// `tsc && tsc-alias` keeps them out of dist/; this config drops that exclude
+	// so `test:types` still sees them. Specs are usually the first place a
+	// contract change shows up, and without this the gate cannot see it.
+	"extends": "./tsconfig.json",
+	"exclude": ["dist", "node_modules"]
+}
