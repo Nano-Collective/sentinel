@@ -1,8 +1,8 @@
 # Sentinel Roadmap
 
-Current version: **`0.1.0-alpha.3`** · No GitHub release cut yet · 97% coverage
+Current version: **`0.1.0-alpha.4`** · five prereleases cut · 97% coverage
 
-Last reconciled against the repository on **2026-09-06**.
+Last reconciled against the repository on **2026-09-07**.
 
 This document is the path from the current alpha to v1, and from v1 to the v1.1
 that lets Sentinel audit the Nano Collective's own infrastructure. It is written
@@ -21,18 +21,25 @@ checker. That makes Sentinel's own correctness an operational dependency.
 
 | | Count |
 |---|---|
-| Open PRs | 4 — the phase 0–2 work below, in review |
-| Open issues | 10 — 6 bugs, 4 features |
-| Releases cut | **0** |
+| Open PRs | 1 — nc-review adoption |
+| Open issues | **3 — all features. No open bugs.** |
+| Releases cut | **5**, all prereleases; latest `0.1.0-alpha.4` |
 | Coverage | ~97% |
 
-**Phase 0 is complete.** All three of `addyCooks`' PRs merged (#12, #13, #14),
-and #9 was fixed along the way by #14 and closed. Phases 1 and 2 are written and
-in review as #22 and #23.
+**Phases 0, 1 and 2 are all merged**, and `0.1.0-alpha.4` shipped on
+2026-09-07 carrying them. The bug backlog is empty: what remains is #1, #10 and
+#17, all features.
 
-Two issues have been raised since this roadmap was written and are placed below:
-**#16** (the type gate never typechecks specs) and **#17** (incremental scanning
-and the auto-resolution fix it requires, which supersedes the sketch in 3c).
+*Correction:* earlier versions of this document said no GitHub release had been
+cut and put the count at zero. That was wrong when written — `v0.1.0-alpha.0`
+through `alpha.3` were all published between 21 and 26 July 2026. The claim it
+was presumably reaching for is that no **stable** release exists, which remains
+true and is what phase 3 is for.
+
+Two issues raised after this roadmap was first written are placed below: **#16**
+(the type gate never typechecked specs — fixed in #21) and **#17** (incremental
+scanning and the auto-resolution fix it requires, which supersedes the sketch in
+3c).
 
 ### Releasing — read this before cutting anything
 
@@ -45,11 +52,15 @@ Since #19 the version bump goes through **changesets**, not a hand edit: each PR
 carries a changeset, `release-prepare.yml` accumulates them into a Version
 Packages PR, and merging that PR pushes the bump `release.yml` publishes.
 
-**#20 is a prerequisite for any of that.** Changesets was adopted without
-entering pre mode, so `changeset version` resolved `0.1.0-alpha.3` to **`0.1.0`**
-— the first Version PR merged would have shipped v1, claimed npm's `latest`, and
-skipped everything below in one merge. With `.changeset/pre.json` in place it
-bumps to `0.1.0-alpha.4` as intended.
+**#20 was a prerequisite for any of that, and the trap was real.** Changesets
+was adopted without entering pre mode, so `changeset version` resolved
+`0.1.0-alpha.3` to **`0.1.0`** — the first Version PR merged would have shipped
+v1, claimed npm's `latest`, and skipped everything below in one merge.
+
+**Confirmed in production:** with `.changeset/pre.json` in place, the Version PR
+generated once #22 landed bumped to `0.1.0-alpha.4`, and the release published
+as `0.1.0-alpha.4` with both dist-tags moved onto it. Without #20 that same PR
+would have read `1.0.0`.
 
 Consequently **cutting `1.0.0` is a deliberate two-step** — `changeset pre exit`
 then `changeset version` — and doing it early releases v1 by accident. See
@@ -62,9 +73,8 @@ then `changeset version` — and doing it early releases v1 by accident. See
 Every open PR closed an open issue. This was the cheapest progress available and
 it took the backlog from 11 issues to 8.
 
-**All three are merged.** The release itself has not been cut — see the
-releasing note above; `0.1.0-alpha.4` now comes out of the Version Packages PR
-once #20 lands.
+**All three are merged**, and shipped in `0.1.0-alpha.4` on 2026-09-07 — though
+alongside phases 1 and 2 rather than as a release of their own.
 
 | PR | Closes | Substance |
 |---|---|---|
@@ -81,7 +91,7 @@ separate change was needed.
 
 ---
 
-## Phase 1 — The error-surfacing class → `0.1.0-alpha.5` 🔶 in review (#22)
+## Phase 1 — The error-surfacing class ✅ merged (#22), shipped in `alpha.4`
 
 **This is the most important work in the roadmap.** Four of the seven open bugs
 are the same failure mode: an error is detected, collected, and then silently
@@ -184,13 +194,14 @@ hits** if they run `sentinel run` outside a configured directory.
 *Fix:* wrap the read and route failures through the same `config error —`
 reporting path.
 
-**Then cut `0.1.0-alpha.5`.** This release is worth describing in the changelog
-as a class of fix rather than four bullets: errors are now surfaced rather than
-swallowed.
+**Shipped in `0.1.0-alpha.4`**, described in the changelog as a class of fix
+rather than four bullets: errors are now surfaced rather than swallowed. The
+separate `alpha.5` this section originally planned was folded in — see the
+summary table.
 
 ---
 
-## Phase 2 — Remaining correctness → `0.1.0-alpha.6` 🔶 in review (#23)
+## Phase 2 — Remaining correctness ✅ merged (#23), shipped in `alpha.4`
 
 ### #2 — `prepareRepo` accepts stale / partial clone directories
 
@@ -234,7 +245,7 @@ local mode.
 correct the documentation. Prefer the former; running two packs locally is a
 reasonable thing to want.
 
-### #16 — the type gate never typechecks specs 🔶 in review (#21)
+### #16 — the type gate never typechecked specs ✅ merged (#21)
 
 Raised after this roadmap was written, and placed here because it protects
 everything in phase 3: `tsconfig.json` excludes `source/**/*.spec.ts` so that
@@ -246,8 +257,9 @@ Fixed by a `tsconfig.test.json` that drops only the exclude, with `test:types`
 running both configs. Adding a required field to an exported interface passes
 the old gate with 0 errors and fails the new one with 10.
 
-**Then cut `0.1.0-alpha.6`** — or roll this phase into the v1 release if it
-lands quickly, since only two items remain.
+**Shipped in `0.1.0-alpha.4`.** This section offered the option of rolling the
+phase into a later release since only two items remained; in the event both
+landed alongside phase 1, so the planned `alpha.6` was never cut either.
 
 ---
 
@@ -418,13 +430,15 @@ commentary only.
 | Phase | Release | Contents | State |
 |---|---|---|---|
 | **0** | `0.1.0-alpha.4` | PRs #13, #12, #14 → closed #11, #6, #1(partial). #9 closed as already fixed | ✅ merged |
-| **1** | `0.1.0-alpha.5` | Error surfacing as one change: #4, #5, #7, #8 | 🔶 #22 |
-| **2** | `0.1.0-alpha.6` | #2 clone validation, #3 repeatable `--rule-pack`, #16 type gate | 🔶 #23, #21 |
+| **1** | shipped in `alpha.4` | Error surfacing as one change: #4, #5, #7, #8 | ✅ #22 |
+| **2** | shipped in `alpha.4` | #2 clone validation, #3 repeatable `--rule-pack`, #16 type gate | ✅ #23, #21 |
 | **3** | **`1.0.0`** | Whitepaper published, #10 severity enforcement, #17 incremental scanning + cache schema + the held-issue fix, release cut | ⬜ |
 | **4** | `1.1.0` | Conformance rule pack, PR review commentary | ⬜ |
 
-Release plumbing itself is gated on **#20** — without it the first Version
-Packages PR ships `1.0.0` instead of `0.1.0-alpha.4`.
+Phases 1 and 2 were folded into a single release rather than the separate
+`alpha.5` and `alpha.6` originally planned: both were ready together, and one
+release carrying a coherent story — errors are surfaced, checkouts are verified —
+reads better in a changelog than two thin ones.
 
 The critical path runs through phase 1. Everything after it depends on Sentinel
 being a tool that tells you when something went wrong.
