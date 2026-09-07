@@ -27,7 +27,7 @@ import type {ModelRunner} from '../orchestrator/types.js';
 import {resolveDependencies} from '../rule-packs/dependencies.js';
 import {parseRulePack} from '../rule-packs/parse.js';
 import type {RulePack} from '../rule-packs/types.js';
-import {auditPack} from './audit.js';
+import {auditPack, skippedPackOutcome} from './audit.js';
 import type {PrepareResult} from './clone.js';
 import {expandTargets} from './expand.js';
 import {
@@ -213,11 +213,18 @@ export async function runFromConfig(
 		const scope = emptyScope();
 		for (const pack of resolvedPacks) {
 			const plan = plans.get(pack.manifest.name);
-			const packFiles =
-				plan?.kind === 'partial'
-					? await deps.files.read(repoDir, plan.paths)
-					: files;
+			let packFiles = files;
 			if (plan?.kind === 'partial') {
+				// `RepoFiles.read` treats an empty pattern list as "the whole
+				// repository", so a pack with nothing to re-read must not be asked to
+				// read at all. Getting this wrong is silent in the worst way: the pack
+				// re-reads everything AND records a scope claiming it scanned
+				// everything, so incremental scanning becomes a no-op that nothing
+				// notices — on the commonest case of all, where nothing changed.
+				packFiles =
+					plan.paths.length === 0
+						? []
+						: await deps.files.read(repoDir, plan.paths);
 				scope.scannedByPack.set(
 					pack.manifest.name,
 					new Set(packFiles.map(file => file.path)),
@@ -225,13 +232,16 @@ export async function runFromConfig(
 			} else {
 				scope.fullPacks.add(pack.manifest.name);
 			}
-			const outcome = await auditPack(
-				pack,
-				{repoName, files: packFiles},
-				config.model,
-				deps.runner,
-				runnerOptions,
-			);
+			const outcome =
+				plan?.kind === 'partial' && packFiles.length === 0
+					? skippedPackOutcome(pack)
+					: await auditPack(
+							pack,
+							{repoName, files: packFiles},
+							config.model,
+							deps.runner,
+							runnerOptions,
+						);
 			packOutcomes.push(outcome);
 			// Only a pass that actually completed may advance the cache. Recording a
 			// commit for a pack whose audit errored would let the next run skip files
