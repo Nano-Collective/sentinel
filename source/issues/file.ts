@@ -40,16 +40,41 @@ export function targetRepoFor(
 	return context.auditedRepo;
 }
 
+/**
+ * The markers that let a later run decide whether this issue's subject was
+ * actually re-examined. The file is already in the body as prose, but prose is
+ * not a contract — parsing it back would break the first time the template
+ * changes, and the pack is not in the body at all.
+ *
+ * `pack` comes from {@link FilingContext} rather than the finding's rule
+ * prefix: the rule is whatever the model wrote, and scope is keyed by the pack
+ * that actually ran.
+ */
+export function withScopeMarkers(
+	body: string,
+	finding: Finding,
+	context: FilingContext,
+): string {
+	const withPath = upsertMarker(body, 'path', finding.file);
+	return context.pack === undefined
+		? withPath
+		: upsertMarker(withPath, 'pack', context.pack);
+}
+
 /** Render one finding into filable issue content. */
 export function buildIssueContent(
 	finding: Finding,
 	config: SentinelConfig,
 	context: FilingContext,
 ): IssueContent {
-	const body = upsertMarker(
-		buildIssueBody(finding, context),
-		'hash',
-		findingHash(finding),
+	const body = withScopeMarkers(
+		upsertMarker(
+			buildIssueBody(finding, context),
+			'hash',
+			findingHash(finding),
+		),
+		finding,
+		context,
 	);
 	return {
 		title: buildIssueTitle(finding),

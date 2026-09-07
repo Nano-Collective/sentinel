@@ -49,6 +49,7 @@ function result(overrides: Partial<ReconcileResult> = {}): ReconcileResult {
 		touched: 0,
 		incremented: 0,
 		resolved: 0,
+		held: 0,
 		suppressed: 0,
 		suppressedByOverride: 0,
 		errors: [],
@@ -257,4 +258,31 @@ test('a clean run records no packLoadErrors field at all', t => {
 	// not have to tell "clean" from "written before this existed".
 	const built = buildRunRecord(report(), TS, 'live');
 	t.false('packLoadErrors' in built);
+});
+
+test('a run that held nothing writes no held key', t => {
+	// Absent is not zero. A record without the field cannot say whether the run
+	// held nothing or predates the field, and the record is the durable artifact
+	// — the same reason packLoadErrors is optional rather than defaulted.
+	const record = buildRunRecord(
+		report({filed: true, reconciled: [{repo: 'org/a', result: result()}]}),
+		'2026-07-21T06:00:00.000Z',
+		'live',
+	);
+	t.false('held' in (record.filing ?? {}));
+});
+
+test('held issues are carried into the durable record', t => {
+	const record = buildRunRecord(
+		report({
+			filed: true,
+			reconciled: [
+				{repo: 'org/a', result: result({held: 2})},
+				{repo: 'org/b', result: result({held: 3})},
+			],
+		}),
+		'2026-07-21T06:00:00.000Z',
+		'live',
+	);
+	t.is(record.filing?.held, 5, 'summed across repos');
 });

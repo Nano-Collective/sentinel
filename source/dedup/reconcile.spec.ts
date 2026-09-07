@@ -317,3 +317,77 @@ test('no label failures leaves the error list clean', async t => {
 	);
 	t.deepEqual(result.errors, []);
 });
+
+test('a filed issue carries the path marker', async t => {
+	const {client, created} = fakeClient();
+	const f = finding('src/db.rs');
+	await reconcileFindings([f], config(), client, CTX, NOW);
+	t.is(readMarker(created[0]?.body ?? '', 'path'), 'src/db.rs');
+});
+
+test('a filed issue carries the pack marker when the pack is known', async t => {
+	const {client, created} = fakeClient();
+	const f = finding('src/db.rs');
+	await reconcileFindings([f], config(), client, CTX, NOW, {
+		packOfFinding: new Map([[f, 'db-safety']]),
+	});
+	t.is(readMarker(created[0]?.body ?? '', 'pack'), 'db-safety');
+});
+
+test('an unattributable finding files without a pack marker', async t => {
+	// Safe direction: no marker means a later partial run holds the issue rather
+	// than ageing it out on the strength of a scan it cannot vouch for.
+	const {client, created} = fakeClient();
+	await reconcileFindings([finding('a.rs')], config(), client, CTX, NOW, {
+		packOfFinding: new Map(),
+	});
+	t.is(readMarker(created[0]?.body ?? '', 'pack'), null);
+});
+
+test('touching an issue backfills the scope markers', async t => {
+	// This is the migration. Issues filed before the markers existed get them
+	// the next time their finding recurs — and because the first run after an
+	// upgrade reads everything, that happens before any file is ever skipped.
+	const f = finding('src/db.rs');
+	const legacy = openIssueFor(f, 7);
+	t.is(readMarker(legacy.body, 'path'), null, 'starts unmarked');
+
+	const {client, updated} = fakeClient([legacy]);
+	await reconcileFindings([f], config(), client, CTX, NOW, {
+		packOfFinding: new Map([[f, 'db-safety']]),
+	});
+
+	t.is(updated.length, 1);
+	t.is(readMarker(updated[0]?.body ?? '', 'path'), 'src/db.rs');
+	t.is(readMarker(updated[0]?.body ?? '', 'pack'), 'db-safety');
+	t.is(readMisses(updated[0]?.body ?? ''), 0, 'still resets the counter');
+});
+
+test('a held issue is neither updated nor closed', async t => {
+	const gone = finding('unscanned.rs');
+	let body = upsertMarker('body', 'hash', findingHash(gone));
+	body = upsertMarker(upsertMarker(body, 'pack', 'p'), 'path', 'unscanned.rs');
+	body = upsertMarker(body, 'misses', '2');
+	const issue: ExistingIssue = {
+		number: 9,
+		url: 'u',
+		state: 'open',
+		labels: ['sentinel'],
+		body,
+	};
+
+	const {client, updated, closed} = fakeClient([issue]);
+	const result = await reconcileFindings([], config(), client, CTX, NOW, {
+		resolveAfterMisses: 3,
+		scope: {
+			scannedByPack: new Map([['p', new Set(['other.rs'])]]),
+			fullPacks: new Set(),
+		},
+	});
+
+	t.is(result.held, 1);
+	t.is(result.incremented, 0);
+	t.is(result.resolved, 0);
+	t.deepEqual(updated, [], 'the body is left exactly as it was');
+	t.deepEqual(closed, [], 'and nothing is closed');
+});

@@ -28,9 +28,16 @@ export {
 	SUPPRESSION_LABELS,
 } from './dedup/plan.js';
 export {
+	type ReconcileExecOptions,
 	type ReconcileResult,
 	reconcileFindings,
 } from './dedup/reconcile.js';
+export {
+	fullScope,
+	isCompleteScope,
+	issueWasScanned,
+	type ScanScope,
+} from './dedup/scope.js';
 export type {
 	Confidence,
 	Finding,

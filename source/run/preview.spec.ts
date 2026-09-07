@@ -169,3 +169,67 @@ test('a dry run with no pack problems shows no pack warnings', t => {
 	t.false(md.includes('Missing packs'));
 	t.false(md.includes('did not resolve'));
 });
+
+test('a dry run reports what it would hold', t => {
+	const gone = finding('unscanned.rs');
+	let body = upsertMarker('body', 'hash', findingHash(gone));
+	body = upsertMarker(upsertMarker(body, 'pack', 'p'), 'path', 'unscanned.rs');
+	const preview = previewReconciliation(
+		[],
+		config(),
+		[{number: 1, url: 'u', state: 'open', labels: ['sentinel'], body}],
+		undefined,
+		{
+			scope: {
+				scannedByPack: new Map([['p', new Set(['other.rs'])]]),
+				fullPacks: new Set(),
+			},
+		},
+	);
+	t.is(preview.wouldHold, 1);
+	t.is(preview.wouldResolve, 0);
+});
+
+test('renderPreview stays silent about holds when there are none', t => {
+	// A line reading "would hold: 0" on every complete run is noise, and noise
+	// is what stops the interesting case being noticed.
+	const markdown = renderPreview([
+		{
+			repo: 'org/a',
+			preview: {
+				wouldFileAsNew: [],
+				dedupWouldMatch: [],
+				belowThreshold: [],
+				suppressedByOverride: [],
+				suppressedByLabel: [],
+				wouldResolve: 0,
+				wouldHold: 0,
+			},
+			failedPacks: [],
+			missingPacks: [],
+			unresolvedPacks: [],
+		},
+	]);
+	t.false(markdown.includes('Would hold'));
+});
+
+test('renderPreview surfaces holds when there are some', t => {
+	const markdown = renderPreview([
+		{
+			repo: 'org/a',
+			preview: {
+				wouldFileAsNew: [],
+				dedupWouldMatch: [],
+				belowThreshold: [],
+				suppressedByOverride: [],
+				suppressedByLabel: [],
+				wouldResolve: 0,
+				wouldHold: 3,
+			},
+			failedPacks: [],
+			missingPacks: [],
+			unresolvedPacks: [],
+		},
+	]);
+	t.true(markdown.includes('Would hold:** 3'));
+});

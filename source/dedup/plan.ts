@@ -2,15 +2,16 @@
  * The dedup planner. Given this run's findings and the issues that already
  * exist on the target repo, decide what to do with each: file a new issue,
  * touch (reset) an existing one, suppress it (a maintainer closed it with a
- * suppression label), or resolve a stale issue whose finding has been absent
- * for enough consecutive runs. Pure and fully tested; the executor
- * (reconcile.ts) applies the plan.
+ * suppression label), hold one whose file this run did not read, or resolve a
+ * stale issue whose finding has been absent for enough consecutive runs. Pure
+ * and fully tested; the executor (reconcile.ts) applies the plan.
  */
 
 import type {Finding} from '../findings/types.js';
 import type {ExistingIssue} from '../issues/types.js';
 import {findingHash} from './hash.js';
 import {readMarker, readMisses} from './markers.js';
+import {issueWasScanned, type ScanScope} from './scope.js';
 
 /** Closing an issue with one of these labels means "do not refile". */
 export const SUPPRESSION_LABELS = [
@@ -23,6 +24,12 @@ export const SUPPRESSION_LABELS = [
 export interface ReconcileOptions {
 	/** Consecutive absent runs before an open issue is auto-resolved. Min 1. */
 	resolveAfterMisses?: number;
+	/**
+	 * What this run actually read. Omit when every file was read — the planner
+	 * then behaves exactly as it did before scope existed. Supplying a partial
+	 * scope is what stops an unscanned finding being mistaken for a fixed one.
+	 */
+	scope?: ScanScope;
 }
 
 /** An open issue matched by a finding this run: reset its miss counter. */
@@ -49,6 +56,14 @@ export interface ReconcilePlan {
 	toResolve: ExistingIssue[];
 	/** Open issues absent this run but below the resolve threshold. */
 	toIncrementMiss: MissOp[];
+	/**
+	 * Open issues whose file this run did not read. Absent from the findings, but
+	 * that absence is not evidence of anything — so they are left untouched, with
+	 * their miss counter exactly where it was. Reported rather than silent: "held,
+	 * not scanned" and "still open" are different states and an operator needs to
+	 * be able to tell them apart.
+	 */
+	held: ExistingIssue[];
 }
 
 function hasSuppressionLabel(issue: ExistingIssue): boolean {
@@ -97,6 +112,7 @@ export function planReconciliation(
 		suppressed: [],
 		toResolve: [],
 		toIncrementMiss: [],
+		held: [],
 	};
 
 	for (const [hash, finding] of findingByHash) {
@@ -112,9 +128,20 @@ export function planReconciliation(
 		}
 	}
 
-	// Open issues whose finding did not recur this run: age them out.
+	// Open issues whose finding did not recur this run: age them out — but only
+	// where "did not recur" is something this run is in a position to claim.
 	for (const [hash, issue] of openByHash) {
 		if (findingByHash.has(hash)) {
+			continue;
+		}
+		if (
+			!issueWasScanned(
+				options.scope,
+				readMarker(issue.body, 'pack'),
+				readMarker(issue.body, 'path'),
+			)
+		) {
+			plan.held.push(issue);
 			continue;
 		}
 		const misses = readMisses(issue.body) + 1;

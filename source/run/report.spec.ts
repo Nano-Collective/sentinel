@@ -50,6 +50,7 @@ function result(overrides: Partial<ReconcileResult> = {}): ReconcileResult {
 		touched: 0,
 		incremented: 0,
 		resolved: 0,
+		held: 0,
 		suppressed: 0,
 		suppressedByOverride: 0,
 		errors: [],
@@ -72,15 +73,24 @@ test('renders every filing counter in the per-repo line', t => {
 				suppressed: 1,
 			}),
 		),
-		'myorg/myrepo: filed 3, touched 5, aged 2, suppressed 1, suppressed-by-override 0, resolved 0',
+		'myorg/myrepo: filed 3, touched 5, aged 2, held 0, suppressed 1, suppressed-by-override 0, resolved 0',
 	);
 });
 
 test('prints zeroed counters rather than omitting them', t => {
 	t.is(
 		renderFilingLine('org/a', result()),
-		'org/a: filed 0, touched 0, aged 0, suppressed 0, suppressed-by-override 0, resolved 0',
+		'org/a: filed 0, touched 0, aged 0, held 0, suppressed 0, suppressed-by-override 0, resolved 0',
 	);
+});
+
+test('held issues are counted apart from aged ones', t => {
+	// An aged issue is one Sentinel looked for and did not find; a held issue is
+	// one it never looked for. Reporting them as one number would hide exactly
+	// the distinction the scope machinery exists to make.
+	const line = renderFilingLine('org/a', result({incremented: 1, held: 4}));
+	t.true(line.includes('aged 1'));
+	t.true(line.includes('held 4'));
 });
 
 test('names the audited repo, not the issue target', t => {

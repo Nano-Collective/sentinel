@@ -2,8 +2,9 @@ import test from 'ava';
 import type {Finding} from '../findings/types.js';
 import type {ExistingIssue} from '../issues/types.js';
 import {findingHash} from './hash.js';
-import {upsertMarker} from './markers.js';
+import {readMisses, upsertMarker} from './markers.js';
 import {planReconciliation} from './plan.js';
+import {fullScope} from './scope.js';
 
 console.log('\ndedup/plan.spec.ts');
 
@@ -151,4 +152,112 @@ test('ignores existing issues with no hash marker', t => {
 	);
 	t.deepEqual(plan.toCreate, [f]);
 	t.is(plan.toIncrementMiss.length, 0);
+});
+
+/** An issue carrying the hash plus the scope markers a current run writes. */
+function markedIssueFor(
+	f: Finding,
+	pack: string,
+	overrides: Partial<ExistingIssue> = {},
+): ExistingIssue {
+	const base = issueFor(f, overrides);
+	return {
+		...base,
+		body: upsertMarker(upsertMarker(base.body, 'pack', pack), 'path', f.file),
+	};
+}
+
+test('with no scope, an absent finding ages out exactly as before', t => {
+	const gone = finding('gone.rs');
+	const plan = planReconciliation([], [markedIssueFor(gone, 'p')]);
+	t.is(plan.toIncrementMiss.length, 1);
+	t.is(plan.held.length, 0);
+});
+
+test('a full scope changes nothing about ageing', t => {
+	const gone = finding('gone.rs');
+	const plan = planReconciliation([], [markedIssueFor(gone, 'p')], {
+		scope: fullScope(['p']),
+	});
+	t.is(plan.toIncrementMiss.length, 1);
+	t.is(plan.held.length, 0);
+});
+
+test('an issue whose file was not read is held, not aged', t => {
+	const gone = finding('unscanned.rs');
+	const plan = planReconciliation([], [markedIssueFor(gone, 'p')], {
+		scope: {
+			scannedByPack: new Map([['p', new Set(['other.rs'])]]),
+			fullPacks: new Set(),
+		},
+	});
+	t.is(plan.held.length, 1, 'held');
+	t.is(plan.toIncrementMiss.length, 0, 'not aged');
+	t.is(plan.toResolve.length, 0, 'not resolved');
+});
+
+test('a held issue is not resolved even when already at the threshold', t => {
+	// The dangerous case: an issue one miss away from being auto-closed, whose
+	// file this run did not read. Ageing it here closes a real finding.
+	const gone = finding('unscanned.rs');
+	const issue = markedIssueFor(gone, 'p');
+	const plan = planReconciliation(
+		[],
+		[{...issue, body: upsertMarker(issue.body, 'misses', '2')}],
+		{
+			resolveAfterMisses: 3,
+			scope: {
+				scannedByPack: new Map([['p', new Set(['other.rs'])]]),
+				fullPacks: new Set(),
+			},
+		},
+	);
+	t.is(plan.toResolve.length, 0);
+	t.is(plan.held.length, 1);
+});
+
+test('an issue whose file WAS read still ages out under a partial scope', t => {
+	// Holding must be narrow. A finding that genuinely stopped recurring in a
+	// file the run did read has to keep closing itself, or auto-resolution is
+	// dead the moment incremental scanning is switched on.
+	const gone = finding('scanned.rs');
+	const plan = planReconciliation([], [markedIssueFor(gone, 'p')], {
+		scope: {
+			scannedByPack: new Map([['p', new Set(['scanned.rs'])]]),
+			fullPacks: new Set(),
+		},
+	});
+	t.is(plan.toIncrementMiss.length, 1);
+	t.is(plan.held.length, 0);
+});
+
+test('holding survives repeated runs — the acceptance property', t => {
+	// Reconciliation across several incremental runs in which the file is never
+	// read. Without the scope the miss counter reaches the threshold and the
+	// issue is closed; with it, the counter never moves at all.
+	const gone = finding('unscanned.rs');
+	let issue = markedIssueFor(gone, 'p');
+	const scope = {
+		scannedByPack: new Map([['p', new Set(['other.rs'])]]),
+		fullPacks: new Set<string>(),
+	};
+
+	for (let run = 0; run < 5; run++) {
+		const plan = planReconciliation([], [issue], {
+			resolveAfterMisses: 3,
+			scope,
+		});
+		t.is(plan.toResolve.length, 0, `run ${run}: not resolved`);
+		t.is(plan.held.length, 1, `run ${run}: held`);
+		// A held issue is not rewritten, so its body carries into the next run
+		// unchanged — including its miss counter.
+		for (const {issue: aged, misses} of plan.toIncrementMiss) {
+			issue = {
+				...aged,
+				body: upsertMarker(aged.body, 'misses', String(misses)),
+			};
+		}
+	}
+
+	t.is(readMisses(issue.body), 0, 'the miss counter never moved');
 });
