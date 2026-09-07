@@ -592,6 +592,7 @@ test('renders large figures compactly', t => {
 				repo: 'my-org/a',
 				packs: ['p'],
 				files: 1204,
+				checkedOut: true,
 				requests: 420,
 				tokens: 3_800_000,
 				durationMs: 14 * 60_000,
@@ -608,6 +609,7 @@ test('renders large figures compactly', t => {
 		},
 		calibration: {
 			msPerRequest: 2000,
+			msPerPromptToken: 10,
 			requestsPerPass: 1,
 			outputTokensPerRequest: 700,
 			samples: 3,
@@ -701,6 +703,7 @@ test('warns about missing packs, unparseable packs, and target errors', t => {
 		},
 		calibration: {
 			msPerRequest: 1000,
+			msPerPromptToken: 10,
 			requestsPerPass: 1,
 			outputTokensPerRequest: 100,
 			samples: 1,
