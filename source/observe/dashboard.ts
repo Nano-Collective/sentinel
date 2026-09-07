@@ -37,6 +37,18 @@ function filingCell(
 	return `<td class="num">${filing?.[key] ?? '—'}</td>`;
 }
 
+/** Every problem one record carries, as flat display lines. */
+function problemsOf(record: RunRecord): string[] {
+	return [...(record.packLoadErrors ?? []), ...record.targetErrors];
+}
+
+function problemCell(record: RunRecord): string {
+	const count = problemsOf(record).length;
+	return count > 0
+		? `<td class="num problems">${count}</td>`
+		: '<td class="num">·</td>';
+}
+
 function row(record: RunRecord): string {
 	const {bySeverity} = record.totals;
 	return [
@@ -50,8 +62,31 @@ function row(record: RunRecord): string {
 		severityCell(bySeverity.medium, 'medium'),
 		severityCell(bySeverity.low, 'low'),
 		...FILING_COLUMNS.map(([, key]) => filingCell(record.filing, key)),
+		problemCell(record),
 		'</tr>',
 	].join('');
+}
+
+/**
+ * The banner above the table when the most recent run did not complete.
+ *
+ * Without it a run in which every repository failed to clone renders as
+ * "0 finding(s) across 0 repo(s)" in the same calm grey as a genuinely clean
+ * estate. The dashboard is the read surface an operator trusts, so a partial
+ * audit has to look different from a clean one at a glance.
+ */
+function problemBanner(latest: RunRecord | undefined): string {
+	if (!latest) {
+		return '';
+	}
+	const problems = problemsOf(latest);
+	if (problems.length === 0) {
+		return '';
+	}
+	return `<div class="alert">
+<strong>⚠️ The latest run did not complete.</strong> Its findings are incomplete — a low count here does not mean a clean estate.
+<ul>${problems.map(problem => `<li>${escapeHtml(problem)}</li>`).join('')}</ul>
+</div>`;
 }
 
 /** Render the dashboard HTML for a set of run records (newest first). */
@@ -65,6 +100,7 @@ export function renderDashboard(records: RunRecord[]): string {
 	const summary = latest
 		? `Latest run ${escapeHtml(latest.timestamp)} — ${latest.totals.findings} finding(s) across ${latest.totals.repos} repo(s).`
 		: 'No runs recorded yet.';
+	const banner = problemBanner(latest);
 
 	return `<!doctype html>
 <html lang="en">
@@ -91,18 +127,23 @@ td.num, td.sev { text-align: right; font-variant-numeric: tabular-nums; }
 .sev.high { color: #ff9e64; }
 .sev.medium { color: #e0af68; }
 .sev.low { color: #565f89; }
+td.problems { color: #f7768e; font-weight: 600; }
+div.alert { background: #33242a; border: 1px solid #f7768e; border-radius: .4rem; padding: .8rem 1rem; margin: 0 0 1.5rem; color: #f7768e; }
+div.alert ul { margin: .5rem 0 0; padding-left: 1.2rem; color: #c0caf5; }
 footer { margin-top: 1.5rem; color: #565f89; font-size: .8rem; }
 </style>
 </head>
 <body>
 <h1>🛡️ Sentinel</h1>
 <p class="summary">${summary}</p>
+${banner}
 <div class="scroll">
 <table>
 <thead><tr>
 <th>Run</th><th>Mode</th><th>Repos</th><th>Findings</th>
 <th>Crit</th><th>High</th><th>Med</th><th>Low</th>
 ${FILING_COLUMNS.map(([label]) => `<th>${label}</th>`).join('')}
+<th>Problems</th>
 </tr></thead>
 <tbody>
 ${rows}

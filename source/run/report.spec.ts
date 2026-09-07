@@ -1,7 +1,14 @@
 import test from 'ava';
 import type {ReconcileResult} from '../dedup/reconcile.js';
 import type {Finding} from '../findings/types.js';
-import {countFindings, renderFilingLine, renderReport} from './report.js';
+import {
+	countFindings,
+	hasRunProblems,
+	type RunProblems,
+	renderFilingLine,
+	renderReport,
+	renderRunProblems,
+} from './report.js';
 import type {PackOutcome, RunOutcome} from './types.js';
 
 console.log('\nrun/report.spec.ts');
@@ -91,7 +98,9 @@ test('the filing line omits tolerated errors', t => {
 
 test('renders findings grouped by repo and pack', t => {
 	const run: RunOutcome = {
-		repos: [{repo: 'org/a', packs: [pack()], missingPacks: []}],
+		repos: [
+			{repo: 'org/a', packs: [pack()], missingPacks: [], unresolvedPacks: []},
+		],
 	};
 	const md = renderReport(run);
 	t.true(md.includes('# Sentinel audit report'));
@@ -110,8 +119,14 @@ test('countFindings totals across repos and packs', t => {
 				repo: 'a',
 				packs: [pack({findings: [finding(), finding()]})],
 				missingPacks: [],
+				unresolvedPacks: [],
 			},
-			{repo: 'b', packs: [pack({findings: []})], missingPacks: []},
+			{
+				repo: 'b',
+				packs: [pack({findings: []})],
+				missingPacks: [],
+				unresolvedPacks: [],
+			},
 		],
 	};
 	t.is(countFindings(run), 2);
@@ -119,7 +134,14 @@ test('countFindings totals across repos and packs', t => {
 
 test('reports a clean pack as no findings', t => {
 	const run: RunOutcome = {
-		repos: [{repo: 'a', packs: [pack({findings: []})], missingPacks: []}],
+		repos: [
+			{
+				repo: 'a',
+				packs: [pack({findings: []})],
+				missingPacks: [],
+				unresolvedPacks: [],
+			},
+		],
 	};
 	t.true(renderReport(run).includes('No findings.'));
 });
@@ -131,6 +153,7 @@ test('reports a run error', t => {
 				repo: 'a',
 				packs: [pack({ok: false, findings: [], runError: 'nanocoder missing'})],
 				missingPacks: [],
+				unresolvedPacks: [],
 			},
 		],
 	};
@@ -151,6 +174,7 @@ test('reports validation failure after retries', t => {
 					}),
 				],
 				missingPacks: [],
+				unresolvedPacks: [],
 			},
 		],
 	};
@@ -159,7 +183,9 @@ test('reports validation failure after retries', t => {
 
 test('lists missing packs for a repo', t => {
 	const run: RunOutcome = {
-		repos: [{repo: 'a', packs: [], missingPacks: ['ghost']}],
+		repos: [
+			{repo: 'a', packs: [], missingPacks: ['ghost'], unresolvedPacks: []},
+		],
 	};
 	t.true(
 		renderReport(run).includes('Missing packs (not in rule-packs/): ghost'),
@@ -168,4 +194,136 @@ test('lists missing packs for a repo', t => {
 
 test('handles a run with no repositories', t => {
 	t.true(renderReport({repos: []}).includes('No repositories were audited.'));
+});
+
+// --- the error-surfacing class ----------------------------------------------
+
+const NO_PROBLEMS: RunProblems = {
+	packLoadErrors: [],
+	targetErrors: [],
+	filingErrors: [],
+};
+
+test('a run with nothing wrong renders no problems section', t => {
+	t.false(hasRunProblems(NO_PROBLEMS));
+	t.is(renderRunProblems(NO_PROBLEMS), '');
+});
+
+test('filing errors recorded as an empty list are not a problem', t => {
+	const problems: RunProblems = {
+		...NO_PROBLEMS,
+		filingErrors: [{repo: 'a', errors: []}],
+	};
+	t.false(hasRunProblems(problems));
+	t.is(renderRunProblems(problems), '');
+});
+
+test('a rule pack that failed to load is surfaced with its reason', t => {
+	// The bug: packLoadErrors was collected on the run report and read by
+	// nothing, so a pack that failed to parse was silently absent from the audit.
+	const problems: RunProblems = {
+		...NO_PROBLEMS,
+		packLoadErrors: [
+			{
+				file: 'broken.md',
+				errors: [{field: 'name', message: 'missing'}],
+			},
+		],
+	};
+	t.true(hasRunProblems(problems));
+	const markdown = renderRunProblems(problems);
+	t.true(markdown.includes('Problems'));
+	t.true(markdown.includes('broken.md'));
+	t.true(markdown.includes('name: missing'));
+	t.true(markdown.includes('incomplete'));
+});
+
+test('a pack load error with no detail still names the file', t => {
+	const markdown = renderRunProblems({
+		...NO_PROBLEMS,
+		packLoadErrors: [{file: 'broken.md', errors: []}],
+	});
+	t.true(markdown.includes('broken.md'));
+	t.true(markdown.includes('could not be parsed'));
+});
+
+test('targets that could not be audited are surfaced', t => {
+	const markdown = renderRunProblems({
+		...NO_PROBLEMS,
+		targetErrors: ['could not check out my-org/a: no access'],
+	});
+	t.true(hasRunProblems({...NO_PROBLEMS, targetErrors: ['x']}));
+	t.true(markdown.includes('could not be audited'));
+	t.true(markdown.includes('no access'));
+});
+
+test('filing errors are surfaced per repo', t => {
+	const markdown = renderRunProblems({
+		...NO_PROBLEMS,
+		filingErrors: [
+			{repo: 'my-org/a', errors: ['ensure label "sentinel": gh failed']},
+		],
+	});
+	t.true(markdown.includes('my-org/a'));
+	t.true(markdown.includes('ensure label "sentinel"'));
+});
+
+test('every problem channel appears in one section', t => {
+	const markdown = renderRunProblems({
+		packLoadErrors: [{file: 'broken.md', errors: []}],
+		targetErrors: ['no access'],
+		filingErrors: [{repo: 'a', errors: ['label failed']}],
+	});
+	t.true(markdown.includes('broken.md'));
+	t.true(markdown.includes('no access'));
+	t.true(markdown.includes('label failed'));
+	// One heading, not three.
+	t.is(markdown.split('## ⚠️ Problems').length - 1, 1);
+});
+
+test('an unresolvable dependency chain is not reported as a missing pack', t => {
+	// The bug: a pack that exists but whose depends_on graph is broken was
+	// pushed onto missingPacks and rendered as "not in rule-packs/" — false, and
+	// it sent the reader hunting for a file that is sitting right there.
+	const run: RunOutcome = {
+		repos: [
+			{
+				repo: 'a',
+				packs: [],
+				missingPacks: [],
+				unresolvedPacks: [
+					{
+						pack: 'app',
+						errors: [
+							{field: 'depends_on', message: 'unknown rule pack: absent'},
+						],
+					},
+				],
+			},
+		],
+	};
+	const markdown = renderReport(run);
+	t.false(markdown.includes('not in rule-packs/'));
+	t.true(markdown.includes('depends_on chain did not resolve'));
+	t.true(markdown.includes('unknown rule pack: absent'));
+	t.true(markdown.includes('`app`'));
+});
+
+test('missing and unresolved packs render as separate lines', t => {
+	const run: RunOutcome = {
+		repos: [
+			{
+				repo: 'a',
+				packs: [],
+				missingPacks: ['ghost'],
+				unresolvedPacks: [
+					{pack: 'app', errors: [{field: 'depends_on', message: 'cycle'}]},
+				],
+			},
+		],
+	};
+	const markdown = renderReport(run);
+	t.true(markdown.includes('Missing packs (not in rule-packs/): ghost'));
+	t.true(markdown.includes('`app`'));
+	t.false(markdown.includes('not in rule-packs/): ghost, app'));
 });

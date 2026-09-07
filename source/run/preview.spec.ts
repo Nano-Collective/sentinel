@@ -87,7 +87,15 @@ test('renderPreview lists each group with counts', t => {
 		config(),
 		[],
 	);
-	const md = renderPreview([{repo: 'my-org/a', preview, failedPacks: []}]);
+	const md = renderPreview([
+		{
+			repo: 'my-org/a',
+			preview,
+			failedPacks: [],
+			missingPacks: [],
+			unresolvedPacks: [],
+		},
+	]);
 	t.true(md.includes('# Sentinel dry run'));
 	t.true(md.includes('No issues were filed.'));
 	t.true(md.includes('## my-org/a'));
@@ -103,6 +111,8 @@ test('renderPreview surfaces failed packs instead of masking them as clean', t =
 			repo: 'my-org/a',
 			preview,
 			failedPacks: [{pack: 'p', reason: 'malformed output after 2 attempt(s)'}],
+			missingPacks: [],
+			unresolvedPacks: [],
 		},
 	]);
 	t.true(md.includes('failed to audit'));
@@ -112,6 +122,50 @@ test('renderPreview surfaces failed packs instead of masking them as clean', t =
 
 test('renderPreview shows no failure block when all packs succeeded', t => {
 	const preview = previewReconciliation([], config(), []);
-	const md = renderPreview([{repo: 'my-org/a', preview, failedPacks: []}]);
+	const md = renderPreview([
+		{
+			repo: 'my-org/a',
+			preview,
+			failedPacks: [],
+			missingPacks: [],
+			unresolvedPacks: [],
+		},
+	]);
 	t.false(md.includes('failed to audit'));
+});
+
+test('a dry run does not present an unrun pack as clean', t => {
+	// Every group reads "none" when no pack ran. Without the pack-selection
+	// problems travelling with the preview, a repo whose packs never ran looks
+	// identical to one audited and found clean.
+	const preview = previewReconciliation([], config(), []);
+	const md = renderPreview([
+		{
+			repo: 'my-org/a',
+			preview,
+			failedPacks: [],
+			missingPacks: ['ghost'],
+			unresolvedPacks: [
+				{pack: 'app', errors: [{field: 'depends_on', message: 'cycle'}]},
+			],
+		},
+	]);
+	t.true(md.includes('Missing packs (not in rule-packs/): ghost'));
+	t.true(md.includes('depends_on chain did not resolve'));
+	t.true(md.includes('`app`'));
+});
+
+test('a dry run with no pack problems shows no pack warnings', t => {
+	const preview = previewReconciliation([], config(), []);
+	const md = renderPreview([
+		{
+			repo: 'my-org/a',
+			preview,
+			failedPacks: [],
+			missingPacks: [],
+			unresolvedPacks: [],
+		},
+	]);
+	t.false(md.includes('Missing packs'));
+	t.false(md.includes('did not resolve'));
 });

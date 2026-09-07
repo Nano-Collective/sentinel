@@ -89,13 +89,18 @@ export async function reconcileFindings(
 	const errors: string[] = [];
 
 	// Sentinel's own labels must exist before filing or GitHub rejects them.
+	// Failures here are tolerated but not swallowed: each one means issues below
+	// may file without that label, which quietly breaks dedup and suppression.
 	if (plan.toCreate.length > 0) {
-		await tolerate(errors, 'ensure labels', () =>
-			client.ensureLabels({
+		await tolerate(errors, 'ensure labels', async () => {
+			const failures = await client.ensureLabels({
 				repo: targetRepo,
 				labels: [config.issues.label, ...SUPPRESSION_LABELS],
-			}),
-		);
+			});
+			for (const failure of failures) {
+				errors.push(`ensure label "${failure.label}": ${failure.error}`);
+			}
+		});
 	}
 
 	const created: CreatedIssue[] = [];

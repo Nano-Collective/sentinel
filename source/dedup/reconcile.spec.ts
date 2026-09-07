@@ -5,6 +5,7 @@ import type {
 	CreatedIssue,
 	CreateIssueParams,
 	ExistingIssue,
+	LabelFailure,
 	ReconcileClient,
 } from '../issues/types.js';
 import {findingHash} from './hash.js';
@@ -54,8 +55,9 @@ function fakeClient(existing: ExistingIssue[] = []) {
 	const closed: Close[] = [];
 	const labelled: string[] = [];
 	const client: ReconcileClient = {
-		async ensureLabels({labels}): Promise<void> {
+		async ensureLabels({labels}): Promise<LabelFailure[]> {
 			labelled.push(...labels);
+			return [];
 		},
 		async createIssue(params): Promise<CreatedIssue> {
 			created.push(params);
@@ -97,7 +99,9 @@ test('ensures Sentinel labels exist before filing', async t => {
 
 test('records a filing error and keeps going', async t => {
 	const client = {
-		async ensureLabels(): Promise<void> {},
+		async ensureLabels(): Promise<LabelFailure[]> {
+			return [];
+		},
 		async createIssue(): Promise<never> {
 			throw new Error("label 'sentinel' not found");
 		},
@@ -236,4 +240,80 @@ test('routes to the config repo when aggregating', async t => {
 	);
 	t.is(result.targetRepo, 'my-org/config');
 	t.is(created[0]?.repo, 'my-org/config');
+});
+
+test('a label that could not be created is reported, not swallowed', async t => {
+	// The bug: ensureLabels discarded the gh CLI's result entirely, so a run
+	// that could not create its labels filed issues without them — silently
+	// breaking dedup and suppression — and said nothing.
+	const client: ReconcileClient = {
+		async ensureLabels({labels}): Promise<LabelFailure[]> {
+			return labels.map(label => ({
+				label,
+				error: 'gh label create failed (status 1): forbidden',
+			}));
+		},
+		async createIssue(params): Promise<CreatedIssue> {
+			return {number: 1, url: `u/${params.repo}`};
+		},
+		async listIssues(): Promise<ExistingIssue[]> {
+			return [];
+		},
+		async updateIssue(): Promise<void> {},
+		async closeIssue(): Promise<void> {},
+	};
+
+	const result = await reconcileFindings(
+		[finding('a.rs')],
+		config(),
+		client,
+		CTX,
+		NOW,
+	);
+
+	// Best effort is preserved: the run continued and still filed.
+	t.is(result.created.length, 1);
+	// But every failure is now on the record.
+	t.is(result.errors.length, 4);
+	t.true(result.errors.every(error => error.startsWith('ensure label "')));
+	t.true(result.errors.some(error => error.includes('sentinel')));
+	t.true(result.errors.some(error => error.includes('forbidden')));
+});
+
+test('a throwing ensureLabels is tolerated and recorded once', async t => {
+	const client: ReconcileClient = {
+		async ensureLabels(): Promise<LabelFailure[]> {
+			throw new Error('gh is not on PATH');
+		},
+		async createIssue(): Promise<CreatedIssue> {
+			return {number: 1, url: 'u'};
+		},
+		async listIssues(): Promise<ExistingIssue[]> {
+			return [];
+		},
+		async updateIssue(): Promise<void> {},
+		async closeIssue(): Promise<void> {},
+	};
+	const result = await reconcileFindings(
+		[finding('a.rs')],
+		config(),
+		client,
+		CTX,
+		NOW,
+	);
+	t.is(result.created.length, 1);
+	t.is(result.errors.length, 1);
+	t.true(result.errors[0]?.includes('gh is not on PATH'));
+});
+
+test('no label failures leaves the error list clean', async t => {
+	const {client} = fakeClient();
+	const result = await reconcileFindings(
+		[finding('a.rs')],
+		config(),
+		client,
+		CTX,
+		NOW,
+	);
+	t.deepEqual(result.errors, []);
 });

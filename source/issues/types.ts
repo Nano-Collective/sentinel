@@ -41,12 +41,29 @@ export interface ExistingIssue {
 	body: string;
 }
 
+/** A label Sentinel could not create, and why. */
+export interface LabelFailure {
+	label: string;
+	error: string;
+}
+
 /** Reading and mutating existing issues, needed by the dedup reconcile step. */
 export interface IssueQueryClient {
-	/** Ensure the given labels exist on the repo (create the missing ones).
+	/**
+	 * Ensure the given labels exist on the repo (create the missing ones).
 	 * Filing or applying a label GitHub does not know about fails, so Sentinel
-	 * creates its own labels up front. */
-	ensureLabels(params: {repo: string; labels: string[]}): Promise<void>;
+	 * creates its own labels up front.
+	 *
+	 * Best effort by design — a label that cannot be created must not abort the
+	 * run, because filing tolerates a missing label per issue. It returns the
+	 * failures rather than throwing them so that "best effort" does not decay
+	 * into "silent": a run that could not create its labels will file fewer
+	 * issues than it should, and the operator needs to be told why.
+	 */
+	ensureLabels(params: {
+		repo: string;
+		labels: string[];
+	}): Promise<LabelFailure[]>;
 	listIssues(params: {repo: string; label: string}): Promise<ExistingIssue[]>;
 	updateIssue(params: {
 		repo: string;

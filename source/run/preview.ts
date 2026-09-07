@@ -11,6 +11,8 @@ import {planReconciliation, type ReconcileOptions} from '../dedup/plan.js';
 import {type Finding, meetsSeverityThreshold} from '../findings/types.js';
 import type {ExistingIssue} from '../issues/types.js';
 import {applyRepoOverride} from '../suppression/apply.js';
+import {renderPackSelectionProblems} from './report.js';
+import type {UnresolvedPack} from './types.js';
 
 /** The grouped outcome a live run would produce. */
 export interface DryRunPreview {
@@ -84,11 +86,15 @@ export interface PackFailure {
 	reason: string;
 }
 
-/** One repo's dry-run preview, plus any packs that failed to audit. */
+/** One repo's dry-run preview, plus any packs that did not produce findings. */
 export interface PreviewEntry {
 	repo: string;
 	preview: DryRunPreview;
 	failedPacks: PackFailure[];
+	/** Packs named by the target but missing from the rule-packs directory. */
+	missingPacks: string[];
+	/** Packs present on disk whose `depends_on` chain failed to resolve. */
+	unresolvedPacks: UnresolvedPack[];
 }
 
 function failureBlock(failedPacks: PackFailure[]): string {
@@ -108,11 +114,22 @@ function failureBlock(failedPacks: PackFailure[]): string {
 export function renderPreview(previews: PreviewEntry[]): string {
 	const parts = ['# Sentinel dry run', '', 'No issues were filed.'];
 
-	for (const {repo, preview, failedPacks} of previews) {
+	for (const {
+		repo,
+		preview,
+		failedPacks,
+		missingPacks,
+		unresolvedPacks,
+	} of previews) {
+		const packProblems = renderPackSelectionProblems(
+			missingPacks,
+			unresolvedPacks,
+		);
 		parts.push(
 			[
 				`## ${repo}`,
 				'',
+				...(packProblems.length > 0 ? [packProblems.join('\n'), ''] : []),
 				group('Would file as new', preview.wouldFileAsNew),
 				'',
 				group('Dedup would have matched', preview.dedupWouldMatch),
