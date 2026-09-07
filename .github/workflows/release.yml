@@ -1,5 +1,11 @@
 name: Release to NPM and GitHub
 
+# Thin caller for the shared org workflow. Everything lives in
+# Nano-Collective/.github — change it there and every repo picks it up.
+#
+# Publishes only when package.json's version is ahead of npm, so merging the
+# Version Packages PR is what triggers a release. Nothing else does.
+
 on:
   push:
     branches: [main]
@@ -11,190 +17,12 @@ permissions:
   id-token: write
 
 jobs:
-  check-version:
-    runs-on: ubuntu-latest
-    outputs:
-      should-publish: ${{ steps.version-check.outputs.should-publish }}
-      package-version: ${{ steps.version-check.outputs.package-version }}
-      npm-version: ${{ steps.version-check.outputs.npm-version }}
-      is-prerelease: ${{ steps.version-check.outputs.is-prerelease }}
-      npm-tag: ${{ steps.version-check.outputs.npm-tag }}
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
-
-      - name: Setup Node.js
-        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
-        with:
-          node-version: "22"
-
-      - name: Check version difference
-        id: version-check
-        run: |
-          # Exported so the inline node scripts below can read it.
-          export PACKAGE_VERSION=$(node -p "require('./package.json').version")
-          echo "package-version=$PACKAGE_VERSION" >> $GITHUB_OUTPUT
-
-          if [[ "$PACKAGE_VERSION" == *"-beta"* ]]; then
-            echo "is-prerelease=true" >> $GITHUB_OUTPUT
-            echo "npm-tag=beta" >> $GITHUB_OUTPUT
-          elif [[ "$PACKAGE_VERSION" == *"-alpha"* ]]; then
-            echo "is-prerelease=true" >> $GITHUB_OUTPUT
-            echo "npm-tag=alpha" >> $GITHUB_OUTPUT
-          elif [[ "$PACKAGE_VERSION" == *"-rc"* ]]; then
-            echo "is-prerelease=true" >> $GITHUB_OUTPUT
-            echo "npm-tag=rc" >> $GITHUB_OUTPUT
-          else
-            echo "is-prerelease=false" >> $GITHUB_OUTPUT
-            echo "npm-tag=latest" >> $GITHUB_OUTPUT
-          fi
-
-          # Read the published list rather than `npm view … version`: that
-          # resolves the `latest` tag, which pre-1.0 can lag behind the newest
-          # prerelease and would then report an already-published version as new.
-          VERSIONS_JSON=$(npm view @nanocollective/sentinel versions --json 2>/dev/null || echo "[]")
-          NPM_VERSION=$(echo "$VERSIONS_JSON" | node -e '
-            let raw = "";
-            process.stdin.on("data", d => (raw += d)).on("end", () => {
-              const parsed = raw.trim() ? JSON.parse(raw) : [];
-              const versions = Array.isArray(parsed) ? parsed : [parsed];
-              console.log(versions.at(-1) ?? "0.0.0");
-            });
-          ')
-          echo "npm-version=$NPM_VERSION" >> $GITHUB_OUTPUT
-
-          ALREADY_PUBLISHED=$(echo "$VERSIONS_JSON" | node -e '
-            let raw = "";
-            process.stdin.on("data", d => (raw += d)).on("end", () => {
-              const parsed = raw.trim() ? JSON.parse(raw) : [];
-              const versions = Array.isArray(parsed) ? parsed : [parsed];
-              console.log(versions.includes(process.env.PACKAGE_VERSION) ? "yes" : "no");
-            });
-          ')
-
-          if [ "$ALREADY_PUBLISHED" = "no" ]; then
-            echo "✅ New version: $PACKAGE_VERSION (newest on npm: $NPM_VERSION)"
-            echo "should-publish=true" >> $GITHUB_OUTPUT
-          else
-            echo "ℹ️ Already published: $PACKAGE_VERSION"
-            echo "should-publish=false" >> $GITHUB_OUTPUT
-          fi
-
-  publish:
-    needs: check-version
-    if: needs.check-version.outputs.should-publish == 'true'
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
-
-      - name: Setup pnpm
-        uses: pnpm/action-setup@f40ffcd9367d9f12939873eb1018b921a783ffaa # v4
-
-      - name: Setup Node.js
-        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
-        with:
-          node-version: "22"
-          registry-url: "https://registry.npmjs.org"
-          cache: "pnpm"
-
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile
-
-      - name: Build project
-        run: pnpm build
-
-      - name: Run tests
-        run: pnpm test:all
-
-      - name: Verify build output
-        run: |
-          for f in dist/cli.js dist/index.js; do
-            if [ ! -f "$f" ]; then
-              echo "❌ Build failed: $f not found"
-              exit 1
-            fi
-          done
-          echo "✅ Build output present"
-
-      - name: Extract changelog
-        id: changelog
-        run: |
-          CHANGELOG=$(node scripts/extract-changelog.js 2>&1) && STATUS=0 || STATUS=$?
-          if [ "$STATUS" -eq 0 ]; then
-            echo "CHANGELOG<<EOF" >> $GITHUB_OUTPUT
-            echo "$CHANGELOG" >> $GITHUB_OUTPUT
-            echo "EOF" >> $GITHUB_OUTPUT
-          else
-            echo "CHANGELOG=No changelog available for this version." >> $GITHUB_OUTPUT
-          fi
-
-      - name: Publish to NPM
-        run: npm publish --provenance --access public --tag ${{ needs.check-version.outputs.npm-tag }}
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-
-      # Pre-1.0 every published version is a prerelease, so it goes out under
-      # `alpha`/`beta`/`rc` and never claims `latest`. That leaves `latest`
-      # pinned to whichever version happened to be published without an
-      # explicit tag — `npx @nanocollective/sentinel` then installs a stale
-      # build. Keep `latest` on the newest prerelease until a stable version
-      # ships, at which point `npm publish --tag latest` claims it and this
-      # step stops firing.
-      - name: Keep latest on the newest prerelease
-        if: needs.check-version.outputs.is-prerelease == 'true'
-        run: |
-          HAS_STABLE=$(npm view @nanocollective/sentinel versions --json 2>/dev/null | node -e '
-            let raw = "";
-            process.stdin.on("data", d => (raw += d)).on("end", () => {
-              const parsed = raw.trim() ? JSON.parse(raw) : [];
-              const versions = Array.isArray(parsed) ? parsed : [parsed];
-              console.log(versions.some(v => !v.includes("-")) ? "yes" : "no");
-            });
-          ')
-          if [ "$HAS_STABLE" = "yes" ]; then
-            echo "ℹ️ A stable version exists — leaving the latest tag alone"
-          else
-            npm dist-tag add @nanocollective/sentinel@$VERSION latest
-            echo "✅ latest now points at $VERSION"
-          fi
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-          VERSION: ${{ needs.check-version.outputs.package-version }}
-
-      - name: Create GitHub Release
-        uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2
-        with:
-          tag_name: v${{ needs.check-version.outputs.package-version }}
-          name: Sentinel v${{ needs.check-version.outputs.package-version }}
-          prerelease: ${{ needs.check-version.outputs.is-prerelease == 'true' }}
-          body: |
-            ## What's Changed
-
-            ${{ steps.changelog.outputs.CHANGELOG }}
-
-            ### Install
-
-            ```bash
-            npx @nanocollective/sentinel@${{ needs.check-version.outputs.package-version }} init
-            ```
-
-            **Full Changelog**: https://github.com/Nano-Collective/sentinel/compare/v${{ needs.check-version.outputs.npm-version }}...v${{ needs.check-version.outputs.package-version }}
-
-  notify:
-    needs: [check-version, publish]
-    if: always()
-    runs-on: ubuntu-latest
-    steps:
-      - name: Notify result
-        run: |
-          if [ "${{ needs.check-version.outputs.should-publish }}" == "true" ]; then
-            if [ "${{ needs.publish.result }}" == "success" ]; then
-              echo "🎉 Published @nanocollective/sentinel v${{ needs.check-version.outputs.package-version }}"
-            else
-              echo "❌ Failed to publish v${{ needs.check-version.outputs.package-version }}"
-              exit 1
-            fi
-          else
-            echo "ℹ️ No new version to publish"
-          fi
+  release:
+    uses: Nano-Collective/.github/.github/workflows/release.yml@main
+    with:
+      release-name: 'Sentinel'
+      # Both are shipped: the CLI the bin maps to, and the library entry.
+      verify-files: 'dist/cli.js dist/index.js'
+      install-command: 'npx {pkg}@{version} init'
+    secrets:
+      NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
