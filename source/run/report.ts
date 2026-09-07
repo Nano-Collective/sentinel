@@ -7,7 +7,9 @@ import {findingHash} from '../dedup/hash.js';
 import type {ReconcileResult} from '../dedup/reconcile.js';
 import type {Finding} from '../findings/types.js';
 import type {SeverityOverride} from '../findings/weighting.js';
+import {explainFullReason} from '../incremental/decide.js';
 import type {
+	FullPassNote,
 	PackLoadError,
 	PackOutcome,
 	RepoOutcome,
@@ -111,6 +113,25 @@ export function renderPackSelectionProblems(
 	return parts;
 }
 
+/**
+ * Why a pack read everything on a target that asked for incremental scanning.
+ * An operator who turned it on and saw no speed-up needs this said out loud;
+ * silently doing the slow thing is how a setting gets believed to be broken.
+ */
+function fullPassNote(notes: FullPassNote[] | undefined): string[] {
+	if (!notes || notes.length === 0) {
+		return [];
+	}
+	return [
+		[
+			`> ${notes.length} pack(s) re-read every file despite incremental scanning:`,
+			...notes.map(
+				note => `> - \`${note.pack}\`: ${explainFullReason(note.reason)}`,
+			),
+		].join('\n'),
+	];
+}
+
 function repoSection(outcome: RepoOutcome): string {
 	const parts = [
 		`## ${outcome.repo}`,
@@ -118,6 +139,7 @@ function repoSection(outcome: RepoOutcome): string {
 			outcome.missingPacks,
 			outcome.unresolvedPacks,
 		),
+		...fullPassNote(outcome.fullPasses),
 	];
 	for (const pack of outcome.packs) {
 		parts.push(packSection(pack));

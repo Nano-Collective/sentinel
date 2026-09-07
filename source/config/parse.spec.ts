@@ -177,3 +177,32 @@ model:
 	t.false(result.valid);
 	t.true(result.errors.some(e => e.field === 'model.fallback'));
 });
+
+test('a target defaults to non-incremental', t => {
+	// Opt-in, not opt-out: skipping files is a trade the operator makes on a
+	// repository they know, and an absent key must never make it for them.
+	const result = parseConfig(FULL_CONFIG);
+	t.is(result.config?.targets[0]?.incremental, undefined);
+});
+
+test('a target can opt in to incremental scanning', t => {
+	const result = parseConfig(
+		FULL_CONFIG.replace(
+			'    rule_packs: [solana-anchor, rust-general]',
+			'    rule_packs: [solana-anchor, rust-general]\n    incremental: true',
+		),
+	);
+	t.true(result.valid);
+	t.true(result.config?.targets[0]?.incremental);
+});
+
+test('a non-boolean incremental is rejected', t => {
+	const result = parseConfig(
+		FULL_CONFIG.replace(
+			'    rule_packs: [solana-anchor, rust-general]',
+			'    rule_packs: [solana-anchor, rust-general]\n    incremental: "yes"',
+		),
+	);
+	t.false(result.valid);
+	t.true(result.errors.some(error => error.field === 'targets[0].incremental'));
+});

@@ -23,6 +23,9 @@ import {createInterface} from 'node:readline/promises';
 import {flagAll, flagBool, flagStr, parseFlags} from './args/flags.js';
 import {loadConfigFrom} from './config/load.js';
 import type {ModelConfig, SentinelConfig} from './config/types.js';
+import {parseCache, serialiseCache} from './incremental/cache.js';
+import {gitProbe} from './incremental/git.js';
+import {CacheSession} from './incremental/session.js';
 import {parseInitArgs} from './init/args.js';
 import {scaffold} from './init/scaffold.js';
 import type {InitOptions} from './init/types.js';
@@ -146,7 +149,9 @@ Options:
   --config-repo <o/n>   Config repo, for routing (default $GITHUB_REPOSITORY)
   --provider <name>     Local mode model provider (default ollama)
   --model <id>          Local mode model id (default llama3.1:70b)
-  --dry-run             Audit but file no issues`;
+  --dry-run             Audit but file no issues
+  --full                Re-audit every file, ignoring the incremental cache
+  --cache-file <path>   Incremental cache (default ./.sentinel-cache.json)`;
 
 /** Load sentinel.yaml, printing every failure mode through one path. */
 function loadConfig(configPath: string): SentinelConfig | null {
@@ -169,6 +174,23 @@ function writeReport(markdown: string, output: string | undefined): void {
 	} else {
 		console.log(markdown);
 	}
+}
+
+/**
+ * Read the incremental cache. A missing or unreadable file is an empty cache,
+ * which makes the run read everything — the safe direction, and the reason this
+ * never reports an error: there is nothing for an operator to act on when the
+ * outcome is a complete audit.
+ */
+function readCache(path: string): CacheSession {
+	const text = existsSync(path) ? readFileSync(path, 'utf8') : null;
+	return new CacheSession(parseCache(text), gitProbe);
+}
+
+function writeCache(session: CacheSession, path: string): void {
+	mkdirSync(dirname(path), {recursive: true});
+	writeFileSync(path, serialiseCache(session.result()));
+	console.log(`Wrote incremental cache to ${path}`);
 }
 
 function writeRunRecord(record: RunRecord, recordsDir: string): void {
@@ -245,6 +267,16 @@ async function runRun(argv: string[]): Promise<number> {
 	const workspace = flagStr(flags, 'workspace') ?? '.';
 	const noClone = flagBool(flags, 'no-clone');
 
+	// The cache is only consulted when a target opted in, but it is loaded either
+	// way so that a run which is not yet incremental still records where each
+	// pack got to. Without that, switching `incremental: true` on would always
+	// find an empty cache and read everything anyway.
+	//
+	// A dry run neither reads nor writes it: a preview must not narrow a later
+	// audit, and must not record a pass it did not make.
+	const cachePath = flagStr(flags, 'cache-file') ?? '.sentinel-cache.json';
+	const cache = dryRun ? undefined : readCache(cachePath);
+
 	// The client is available whenever a token is present — a dry run uses it to
 	// read existing issues for the preview, a live run to file.
 	const hasToken = Boolean(process.env.GITHUB_TOKEN);
@@ -258,6 +290,7 @@ async function runRun(argv: string[]): Promise<number> {
 			client: hasToken ? ghIssueClient : undefined,
 			repoLister: ghRepoLister,
 			cloneRepo: noClone ? undefined : prepareRepo,
+			cache,
 			now,
 		},
 		{
@@ -273,8 +306,13 @@ async function runRun(argv: string[]): Promise<number> {
 				? Number(flagStr(flags, 'resolve-after-misses'))
 				: undefined,
 			dryRun,
+			full: flagBool(flags, 'full'),
 		},
 	);
+
+	if (cache) {
+		writeCache(cache, cachePath);
+	}
 
 	// Dry run with a token renders the grouped preview; otherwise the plain
 	// findings report.

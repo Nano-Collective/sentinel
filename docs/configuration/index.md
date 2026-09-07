@@ -53,8 +53,40 @@ A list of repositories to audit. Each entry is either an explicit `repo:` or a `
 | `repo` | A single `owner/name` repository. |
 | `pattern` | A glob matching multiple repositories in the org. Combine with allow/deny as needed. |
 | `rule_packs` | The list of pack names (from `rule-packs/`) to run against this target. |
+| `incremental` | Re-audit only files that changed since the last successful pass. Off by default — see below. |
 
 A repo's assigned packs, combined with each pack's `applies_to.paths`, determine which files are read. See [Rule Packs](../rule-packs/index.md#assigning-packs-to-repositories).
+
+#### `incremental`
+
+Re-auditing a whole repository when a handful of files moved is the dominant cost as an install grows. Setting `incremental: true` on a target limits each pack to the files that changed since that pack last completed a pass.
+
+```yaml
+targets:
+  - repo: my-org/my-program
+    rule_packs: [solana-anchor, rust-general]
+    incremental: true
+```
+
+It is **off by default and opt-in per target**, because it trades a complete re-read for speed, and that is a trade to make on a repository you know rather than to inherit.
+
+**A pack re-reads everything whenever anything is uncertain.** Being wrong about needing to re-read costs some model time; being wrong about *not* needing to costs a missed finding. Those are not close, so a full pass happens when:
+
+- the target has no cached pass yet (the first run, always);
+- the pack's version or body changed — an edited prompt asks a different question, and every file has to answer it again;
+- a pack it `depends_on` changed, for the same reason: a dependency's body is part of this pack's prompt;
+- the cached commit is unreachable — a shallow clone, or a force-push that orphaned it. *Cannot tell* is not *nothing changed*;
+- `--full` was passed.
+
+The run report says which packs re-read everything and why, so a target that opted in and got no speed-up explains itself.
+
+A pack whose audit **failed** records nothing. Advancing the cache after an errored pass would let the next run skip files on the strength of an audit that never happened.
+
+If a repository matches several targets, incremental applies only when **every** one of them opted in — otherwise a target expecting a complete re-read would quietly stop getting one.
+
+The cache is a JSON file (`.sentinel-cache.json` by default, `--cache-file` to move it) committed to the configuration repo beside the run records. There is no database. A cache that is missing, unreadable or written by a newer schema is treated as empty, which means the run reads everything.
+
+Skipping files is only safe because auto-resolution knows what was read: an open issue whose file this run did not read is **held** rather than aged towards being closed. See [findings](../findings/index.md#auto-resolution-only-counts-runs-that-looked).
 
 ### `schedule`
 

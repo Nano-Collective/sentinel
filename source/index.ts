@@ -33,6 +33,7 @@ export {
 	reconcileFindings,
 } from './dedup/reconcile.js';
 export {
+	emptyScope,
 	fullScope,
 	isCompleteScope,
 	issueWasScanned,
@@ -57,6 +58,27 @@ export type {
 	ValidationResult,
 } from './findings/validate.js';
 export {validateFindings} from './findings/validate.js';
+export {
+	lookup as lookupCacheEntry,
+	parseCache,
+	serialiseCache,
+} from './incremental/cache.js';
+export {
+	decidePackScope,
+	dependencyHash,
+	explainFullReason,
+	type FullReason,
+	type GitProbe,
+	type PackScanPlan,
+	packBodyHash,
+} from './incremental/decide.js';
+export {CacheSession} from './incremental/session.js';
+export {
+	CACHE_VERSION,
+	emptyCache,
+	type IncrementalCache,
+	type PackCacheEntry,
+} from './incremental/types.js';
 export {type ParsedInitArgs, parseInitArgs} from './init/args.js';
 export {planInit} from './init/plan.js';
 export {type ScaffoldResult, scaffold} from './init/scaffold.js';

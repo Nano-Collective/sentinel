@@ -32,6 +32,11 @@ export interface ScanScope {
 	fullPacks: Set<string>;
 }
 
+/** A scope nothing has been recorded into yet. */
+export function emptyScope(): ScanScope {
+	return {scannedByPack: new Map(), fullPacks: new Set()};
+}
+
 /** A scope in which every named pack read everything it applies to. */
 export function fullScope(packs: Iterable<string>): ScanScope {
 	return {scannedByPack: new Map(), fullPacks: new Set(packs)};

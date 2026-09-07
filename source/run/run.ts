@@ -12,13 +12,21 @@ import {join} from 'node:path';
 import {parseRepoOverride} from '../config/repo-override.js';
 import type {RepoOverride, SentinelConfig} from '../config/types.js';
 import {type ReconcileResult, reconcileFindings} from '../dedup/reconcile.js';
-import {fullScope} from '../dedup/scope.js';
+import {emptyScope} from '../dedup/scope.js';
 import type {Finding} from '../findings/types.js';
+import {
+	decidePackScope,
+	type FullReason,
+	type PackScanPlan,
+} from '../incremental/decide.js';
+import type {CacheSession} from '../incremental/session.js';
 import {targetRepoFor} from '../issues/file.js';
 import type {FilingContext, ReconcileClient} from '../issues/types.js';
 import type {AutoFixOptions} from '../orchestrator/auto-fix.js';
 import type {ModelRunner} from '../orchestrator/types.js';
+import {resolveDependencies} from '../rule-packs/dependencies.js';
 import {parseRulePack} from '../rule-packs/parse.js';
+import type {RulePack} from '../rule-packs/types.js';
 import {auditPack} from './audit.js';
 import type {PrepareResult} from './clone.js';
 import {expandTargets} from './expand.js';
@@ -30,6 +38,7 @@ import {
 import type {RepoLister} from './repo-lister.js';
 import {selectPacks, unionPatterns} from './select.js';
 import type {
+	FullPassNote,
 	PackLoadError,
 	PackLoader,
 	PackOutcome,
@@ -49,6 +58,11 @@ export interface RunDeps {
 	repoLister?: RepoLister;
 	/** Ensures a target repo is checked out; omit to assume repos are present. */
 	cloneRepo?: (repo: string, dir: string) => Promise<PrepareResult>;
+	/**
+	 * The incremental cache for this run. Omit it and every pack reads
+	 * everything, which is the pre-incremental behaviour and the default.
+	 */
+	cache?: CacheSession;
 	/** ISO timestamp for deterministic reconciliation. */
 	now: string;
 }
@@ -70,6 +84,8 @@ export interface RunConfigOptions {
 	dryRun?: boolean;
 	autoFix?: AutoFixOptions;
 	resolveAfterMisses?: number;
+	/** Re-audit everything, ignoring the cache. */
+	full?: boolean;
 }
 
 /** Everything a config-driven run produced. */
@@ -84,6 +100,28 @@ export interface RunReport {
 	targetErrors: string[];
 	/** True if issues were filed (client present and not a dry run). */
 	filed: boolean;
+}
+
+/**
+ * The packs one pack depends on, transitively, in the order the resolver puts
+ * them in the prompt. The root is dropped: a pack is not its own dependency,
+ * and folding it in would make `dependencyHash` shadow `bodyHash` and lose the
+ * distinction the run report draws between the two.
+ */
+function dependenciesOf(available: RulePack[], pack: RulePack): RulePack[] {
+	const chain = resolveDependencies(available, pack.manifest.name);
+	const byName = new Map(available.map(entry => [entry.manifest.name, entry]));
+	const dependencies: RulePack[] = [];
+	for (const name of chain.order) {
+		if (name === pack.manifest.name) {
+			continue;
+		}
+		const dependency = byName.get(name);
+		if (dependency) {
+			dependencies.push(dependency);
+		}
+	}
+	return dependencies;
 }
 
 async function readOverride(
@@ -136,31 +174,95 @@ export async function runFromConfig(
 			unresolved: unresolvedPacks,
 		} = selectPacks(loaded.packs, target.rulePacks);
 
-		const files = await deps.files.read(repoDir, unionPatterns(resolvedPacks));
-
 		const runnerOptions: AutoFixOptions = {
 			...options.autoFix,
 			cwd: repoDir,
 			configDir: options.configDir,
 		};
-		const packOutcomes: PackOutcome[] = [];
+
+		// Decide each pack's scope before reading anything, so a pack that may skip
+		// files reads only what it needs. Packs reading everything still share a
+		// single union read, exactly as before.
+		const plans = new Map<string, PackScanPlan>();
 		for (const pack of resolvedPacks) {
-			packOutcomes.push(
-				await auditPack(
-					pack,
-					{repoName, files},
-					config.model,
-					deps.runner,
-					runnerOptions,
-				),
+			plans.set(
+				pack.manifest.name,
+				deps.cache
+					? decidePackScope({
+							pack,
+							repoDir,
+							cached: deps.cache.entryFor(repoName, pack.manifest.name),
+							dependencies: dependenciesOf(resolvedPacks, pack),
+							incremental: target.incremental,
+							forced: options.full === true,
+							probe: deps.cache.probe,
+						})
+					: {kind: 'full', reason: 'incremental-disabled'},
 			);
 		}
+
+		const fullPacks = resolvedPacks.filter(
+			pack => plans.get(pack.manifest.name)?.kind === 'full',
+		);
+		const files =
+			fullPacks.length > 0
+				? await deps.files.read(repoDir, unionPatterns(fullPacks))
+				: [];
+
+		const packOutcomes: PackOutcome[] = [];
+		const scope = emptyScope();
+		for (const pack of resolvedPacks) {
+			const plan = plans.get(pack.manifest.name);
+			const packFiles =
+				plan?.kind === 'partial'
+					? await deps.files.read(repoDir, plan.paths)
+					: files;
+			if (plan?.kind === 'partial') {
+				scope.scannedByPack.set(
+					pack.manifest.name,
+					new Set(packFiles.map(file => file.path)),
+				);
+			} else {
+				scope.fullPacks.add(pack.manifest.name);
+			}
+			const outcome = await auditPack(
+				pack,
+				{repoName, files: packFiles},
+				config.model,
+				deps.runner,
+				runnerOptions,
+			);
+			packOutcomes.push(outcome);
+			// Only a pass that actually completed may advance the cache. Recording a
+			// commit for a pack whose audit errored would let the next run skip files
+			// on the strength of a pass that never happened.
+			if (outcome.ok && deps.cache) {
+				deps.cache.recordPass(
+					repoName,
+					repoDir,
+					pack,
+					dependenciesOf(resolvedPacks, pack),
+				);
+			}
+		}
+
+		// Only interesting when the operator asked for incremental scanning: a
+		// full pass they did not request needs no explanation.
+		const fullPasses: FullPassNote[] = target.incremental
+			? [...plans.entries()]
+					.filter(([, plan]) => plan.kind === 'full')
+					.map(([pack, plan]) => ({
+						pack,
+						reason: (plan as {reason: FullReason}).reason,
+					}))
+			: [];
 
 		repos.push({
 			repo: repoName,
 			packs: packOutcomes,
 			missingPacks,
 			unresolvedPacks,
+			...(fullPasses.length > 0 ? {fullPasses} : {}),
 		});
 
 		if (!deps.client) {
@@ -176,11 +278,6 @@ export async function runFromConfig(
 				packOfFinding.set(finding, outcome.pack);
 			}
 		}
-		// Every pack read everything it applies to: this path does not skip files
-		// yet, so the scope is complete and reconciliation is unchanged. The
-		// plumbing lands first so that the incremental cache cannot be introduced
-		// without it.
-		const scope = fullScope(packOutcomes.map(outcome => outcome.pack));
 		const override = await readOverride(deps.files, repoDir);
 		const context: FilingContext = {
 			auditedRepo: repoName,

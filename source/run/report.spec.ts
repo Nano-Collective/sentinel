@@ -378,3 +378,32 @@ test('a pack that overrode nothing adds no note', t => {
 	};
 	t.false(renderReport(run).includes('severity weighting overrode'));
 });
+
+test('a pack that re-read everything on an incremental target says why', t => {
+	// An operator who switched incremental on and saw no speed-up needs this
+	// said out loud. Silently doing the slow thing is how a setting gets
+	// believed to be broken.
+	const run: RunOutcome = {
+		repos: [
+			{
+				repo: 'org/a',
+				packs: [pack()],
+				missingPacks: [],
+				unresolvedPacks: [],
+				fullPasses: [{pack: 'db-safety', reason: 'sha-unreachable'}],
+			},
+		],
+	};
+	const markdown = renderReport(run);
+	t.true(markdown.includes('db-safety'));
+	t.true(markdown.includes('cached commit is unreachable'));
+});
+
+test('a repo with no full-pass notes gets no note', t => {
+	const run: RunOutcome = {
+		repos: [
+			{repo: 'org/a', packs: [pack()], missingPacks: [], unresolvedPacks: []},
+		],
+	};
+	t.false(renderReport(run).includes('re-read every file'));
+});

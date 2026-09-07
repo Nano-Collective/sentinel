@@ -15,6 +15,15 @@ export interface Target {
 	pattern?: string;
 	/** The rule pack names to run against this target. */
 	rulePacks: string[];
+	/**
+	 * Re-audit only files that changed since this target's last successful pass.
+	 *
+	 * Off by default, and opt-in per target rather than globally: it trades a
+	 * complete re-read for speed, and that trade is the operator's to make on a
+	 * repository they know. A target that does not set it behaves exactly as it
+	 * always has.
+	 */
+	incremental?: boolean;
 }
 
 /** An optional cloud fallback, used only when the primary model struggles. */
