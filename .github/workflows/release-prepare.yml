@@ -9,6 +9,13 @@ name: Prepare Release (Version PR)
 on:
   push:
     branches: [main]
+  # Manual re-trigger. A push is normally what rebuilds the Version PR, but if
+  # this workflow fails for a reason outside the repository — a broken action,
+  # a token, an outage — the only way back is another commit to main, and an
+  # empty commit is a poor way to retry a release. Re-running the failed run
+  # does not help: a run pins the shared workflow at the commit it resolved
+  # when it started, so a re-run replays the same broken version.
+  workflow_dispatch:
 
 permissions:
   contents: write
