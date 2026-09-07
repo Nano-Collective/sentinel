@@ -21,14 +21,15 @@ checker. That makes Sentinel's own correctness an operational dependency.
 
 | | Count |
 |---|---|
-| Open PRs | 1 — nc-review adoption |
-| Open issues | **3 — all features. No open bugs.** |
+| Open PRs | 0 |
+| Open issues | **2 — #1 and #17, both incremental scanning. No open bugs.** |
 | Releases cut | **5**, all prereleases; latest `0.1.0-alpha.4` |
 | Coverage | ~97% |
 
 **Phases 0, 1 and 2 are all merged**, and `0.1.0-alpha.4` shipped on
-2026-09-07 carrying them. The bug backlog is empty: what remains is #1, #10 and
-#17, all features.
+2026-09-07 carrying them. **Phase 3 is two-thirds done**: the whitepaper is
+published and #10 is merged. The bug backlog is empty — what remains before
+`1.0.0` is #17 (with #1, which it supersedes) and cutting the release.
 
 *Correction:* earlier versions of this document said no GitHub release had been
 cut and put the count at zero. That was wrong when written — `v0.1.0-alpha.0`
@@ -267,13 +268,22 @@ landed alongside phase 1, so the planned `alpha.6` was never cut either.
 
 All 7 bugs and all 3 PRs are done. Four things stand between that and `1.0.0`.
 
-### 3a. Publish the whitepaper
+### 3a. Publish the whitepaper ✅ done
 
 `README.md:9` and `docs/index.md:47` both state that this repository
 "describe[s] the v1 design settled in the [Sentinel whitepaper]" and link to
 `https://docs.nanocollective.org/collective/whitepapers/sentinel`.
 
-**That URL returns 404.** There is no `sentinel.md` in the docs repo's
+**Published 2026-09-07** at that URL, status `Building`, no review window.
+`review_opens` and `review_closes` are **omitted rather than back-filled** —
+`buildReviewText` returns null when both are absent, so the badge shows the
+status alone and no invented review window is recorded. The paper states in its
+own opening why it is retrospective, so a reader is not left wondering why a
+shipped project is being proposed.
+
+The rest of this section is the reasoning that led there, kept for the record.
+
+**That URL returned 404.** There is no `sentinel.md` in the docs repo's
 `content/collective/whitepapers/` directory — the only "Sentinel" string there
 is a frontmatter *example* in `index.md`. The document defining v1 scope is not
 published, while two user-facing pages send readers to it.
@@ -294,7 +304,7 @@ Two details to settle when writing it:
   settled. Check how the badge renders when they are absent.
 - `proposer: "Will Lamerton"`, `proposer_github: "will-lamerton"`.
 
-### 3b. #10 — Enforce `severity_weighting`
+### 3b. #10 — Enforce `severity_weighting` ✅ merged (#30)
 
 `severity_weighting` is parsed from the manifest into
 `manifest.severityWeighting` (`source/rule-packs/types.ts:31`) and passed into
@@ -316,6 +326,21 @@ mismatch). Overwriting is simpler and does not punish an otherwise accurate
 finding with a retry, so prefer it — but whichever lands must be documented,
 because the two behaviours are indistinguishable to a pack author until one
 fires.
+
+**Shipped as overwrite, in both directions** — a model inflating everything to
+critical is as much a triage problem as one understating, so a *lower* manifest
+value wins too. Two things worth carrying forward:
+
+- **Key resolution was the part that decided whether it worked at all.**
+  Findings are reported as `<pack>/<pattern>` while manifests are written with
+  bare pattern names, so a literal lookup matches nothing in the common case —
+  exactly how this feature could have shipped and still done nothing. Both
+  spellings resolve, fully-qualified winning where both exist.
+- **Overrides are reported, not applied silently.** The run report names the
+  rule, the file, and the change. Same property alpha.4 established for errors:
+  a thing that changes the output must not be invisible.
+
+Documented in `docs/rule-packs/index.md` as authoritative rather than advisory.
 
 ### 3c. #1 (second half) — Incremental scanning
 
@@ -432,7 +457,7 @@ commentary only.
 | **0** | `0.1.0-alpha.4` | PRs #13, #12, #14 → closed #11, #6, #1(partial). #9 closed as already fixed | ✅ merged |
 | **1** | shipped in `alpha.4` | Error surfacing as one change: #4, #5, #7, #8 | ✅ #22 |
 | **2** | shipped in `alpha.4` | #2 clone validation, #3 repeatable `--rule-pack`, #16 type gate | ✅ #23, #21 |
-| **3** | **`1.0.0`** | Whitepaper published, #10 severity enforcement, #17 incremental scanning + cache schema + the held-issue fix, release cut | ⬜ |
+| **3** | **`1.0.0`** | ✅ whitepaper published · ✅ #10 severity enforcement (#30) · ⬜ #17 incremental scanning + cache schema + the held-issue fix · ⬜ release cut | 🔶 |
 | **4** | `1.1.0` | Conformance rule pack, PR review commentary | ⬜ |
 
 Phases 1 and 2 were folded into a single release rather than the separate
