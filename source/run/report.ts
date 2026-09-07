@@ -6,6 +6,7 @@
 import {findingHash} from '../dedup/hash.js';
 import type {ReconcileResult} from '../dedup/reconcile.js';
 import type {Finding} from '../findings/types.js';
+import type {SeverityOverride} from '../findings/weighting.js';
 import type {
 	PackLoadError,
 	PackOutcome,
@@ -45,7 +46,32 @@ function packSection(outcome: PackOutcome): string {
 	if (outcome.findings.length === 0) {
 		return `${header}\n\nNo findings.`;
 	}
-	return [header, '', ...outcome.findings.map(findingSection)].join('\n\n');
+	return [
+		header,
+		'',
+		...severityOverrideNote(outcome.severityOverrides),
+		...outcome.findings.map(findingSection),
+	].join('\n\n');
+}
+
+/**
+ * Severities the pack rewrote. Shown because the rewrite is a real change to
+ * what gets filed and to how it is triaged — a pack author calibrating
+ * `severity_weighting` needs to see it firing, and an operator reading a
+ * `critical` needs to know whether the model or the pack said so.
+ */
+function severityOverrideNote(overrides: SeverityOverride[]): string[] {
+	if (overrides.length === 0) {
+		return [];
+	}
+	return [
+		[
+			`> The pack's severity weighting overrode ${overrides.length} severity(ies):`,
+			...overrides.map(
+				o => `> - \`${o.rule}\` in \`${o.file}\`: ${o.from} → ${o.to}`,
+			),
+		].join('\n'),
+	];
 }
 
 /** A collapsible block with the raw model output, for diagnosing a failure. */

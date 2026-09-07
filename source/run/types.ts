@@ -6,6 +6,7 @@
 
 import type {Finding} from '../findings/types.js';
 import type {ValidationError} from '../findings/validate.js';
+import type {SeverityOverride} from '../findings/weighting.js';
 import type {SourceFile} from '../prompt/types.js';
 import type {RulePack, RulePackError} from '../rule-packs/types.js';
 
@@ -62,6 +63,12 @@ export interface PackOutcome {
 	raw?: string;
 	/** What the pass cost, measured as it ran. */
 	usage: PackUsage;
+	/**
+	 * Severities the pack's `severity_weighting` overrode. Carried rather than
+	 * applied silently: rewriting a finding's severity is a real change to what
+	 * gets filed, and an operator calibrating a pack needs to see it happening.
+	 */
+	severityOverrides: SeverityOverride[];
 }
 
 /**

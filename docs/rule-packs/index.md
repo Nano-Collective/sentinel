@@ -52,11 +52,38 @@ One file per pack is deliberate: it is easy to install (`cp`), easy to diff, and
 | `description` | recommended | One line describing what the pack audits for. |
 | `applies_to.paths` | recommended | Glob patterns for the files this pack should read (e.g. `programs/**/*.rs`). Omit to apply to the whole repo. |
 | `applies_to.languages` | optional | Language identifiers the pack targets. A hint for scoping and reporting. |
-| `severity_weighting` | optional | Per-finding-type overrides mapping a finding key to a severity. Lets one pack express that some patterns it looks for are inherently more serious than others. |
+| `severity_weighting` | optional | Per-finding-type severities mapping a finding key to a severity. **Authoritative, not advisory** — see below. |
 | `depends_on` | optional | Other packs that should run alongside this one (e.g. a language-general pack). |
 | `category` | recommended | The pack's primary category (`security`, `correctness`, `performance`, `convention`, …). Carried onto findings. |
 
 The manifest format is a **stable v1 contract**. Fields may be added; existing fields will not change meaning without a major version and a migration note.
+
+### `severity_weighting` is authoritative
+
+A rule listed in `severity_weighting` gets that severity. The weighting is also
+put in front of the model, but a prompt is a request — the value in the manifest
+is what ends up on the finding and in the filed issue, whatever the model
+answered.
+
+That applies in both directions. A model that inflates everything to `critical`
+is as much a triage problem as one that understates, so the pack's value wins
+even when it is *lower* than the model's.
+
+Keys may be written either way. Findings are reported as `<pack>/<pattern>`, and
+both spellings resolve:
+
+```yaml
+severity_weighting:
+  sql-injection: critical            # bare pattern
+  db-safety/sql-injection: critical  # fully qualified — wins if both are present
+```
+
+Rules you do not list keep whatever severity the model chose, so weighting is
+opt-in per rule rather than a table you have to complete.
+
+**Overrides are reported.** When a pack rewrites a severity, the run report says
+so — which rule, in which file, and from what to what. Calibrating a pack means
+knowing whether your weighting is firing at all.
 
 ## The Markdown body
 

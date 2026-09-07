@@ -38,6 +38,7 @@ function pack(overrides: Partial<PackOutcome> = {}): PackOutcome {
 		ok: true,
 		errors: [],
 		usage: {durationMs: 0, promptTokens: 0, outputTokens: 0},
+		severityOverrides: [],
 		...overrides,
 	};
 }
@@ -326,4 +327,44 @@ test('missing and unresolved packs render as separate lines', t => {
 	t.true(markdown.includes('Missing packs (not in rule-packs/): ghost'));
 	t.true(markdown.includes('`app`'));
 	t.false(markdown.includes('not in rule-packs/): ghost, app'));
+});
+
+test('a pack that overrode a severity says so', t => {
+	// Rewriting a finding's severity changes what gets filed and how it is
+	// triaged. Doing that silently would leave a pack author unable to tell
+	// whether their weighting fired at all.
+	const run: RunOutcome = {
+		repos: [
+			{
+				repo: 'a',
+				packs: [
+					pack({
+						severityOverrides: [
+							{
+								rule: 'db-safety/sql-injection',
+								file: 'src/db.ts',
+								from: 'low',
+								to: 'critical',
+							},
+						],
+					}),
+				],
+				missingPacks: [],
+				unresolvedPacks: [],
+			},
+		],
+	};
+	const markdown = renderReport(run);
+	t.true(markdown.includes('severity weighting overrode 1'));
+	t.true(markdown.includes('`db-safety/sql-injection`'));
+	t.true(markdown.includes('low → critical'));
+});
+
+test('a pack that overrode nothing adds no note', t => {
+	const run: RunOutcome = {
+		repos: [
+			{repo: 'a', packs: [pack()], missingPacks: [], unresolvedPacks: []},
+		],
+	};
+	t.false(renderReport(run).includes('severity weighting overrode'));
 });
