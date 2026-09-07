@@ -72,7 +72,7 @@ The scope is tracked **per rule pack**, because packs do not read the same files
 
 Held issues are counted separately from aged ones in the run summary, the run record and the dashboard. `aged` means Sentinel looked and did not find; `held` means it did not look. Collapsing them would hide the distinction this exists to draw.
 
-Today every run reads every file, so `held` is always zero. It becomes meaningful with [incremental scanning](https://github.com/Nano-Collective/sentinel/issues/17), which is what makes skipping files safe rather than quietly destructive.
+`held` is zero unless a target has [incremental scanning](../configuration/index.md#incremental) enabled — without it every run reads every file, so nothing is ever skipped and nothing needs holding. This is what makes skipping files safe rather than quietly destructive.
 
 Issues filed before Sentinel recorded this carry no file marker. They keep exactly their old behaviour while runs read everything, and they are marked the next time their finding recurs — which happens before any file is skipped, because the first run in a repository always reads everything.
 
