@@ -6,6 +6,7 @@
  */
 
 import type {ModelConfig} from '../config/types.js';
+import {applySeverityWeighting} from '../findings/weighting.js';
 import {
 	type AutoFixOptions,
 	runAuditWithAutoFix,
@@ -45,10 +46,17 @@ export async function auditPack(
 	const result = await runAuditWithAutoFix(prompt, model, runner, options);
 	const durationMs = Date.now() - startedAt;
 
+	// The pack's word is law on severity. The weighting reaches the model in the
+	// prompt, but a prompt is a request — this is what makes it authoritative,
+	// and it is applied after validation so an accurate finding is never
+	// discarded over a severity we already know the right answer to.
+	const {findings, overrides} = applySeverityWeighting(result.findings, pack);
+
 	return {
 		pack: pack.manifest.name,
 		version: pack.manifest.version,
-		findings: result.findings,
+		findings,
+		severityOverrides: overrides,
 		attempts: result.attempts,
 		ok: result.ok,
 		errors: result.errors,

@@ -33,6 +33,7 @@ function pack(
 		ok: true,
 		errors: [],
 		usage: {durationMs: 1000, promptTokens: 400, outputTokens: 50},
+		severityOverrides: [],
 		...overrides,
 	};
 }
