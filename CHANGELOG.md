@@ -1,3 +1,49 @@
+## 0.1.0-alpha.4
+
+### Patch Changes
+
+- **A stale or unrelated checkout is no longer audited as if it were current.**
+  `prepareRepo` treated any existing directory as a valid checkout, so an empty
+  directory, a half-finished clone from an interrupted run, or a checkout of an
+  entirely different repository all reported success — and the audit then ran
+  against whatever was there and filed findings against the wrong source. It now
+  verifies the directory is a git checkout whose `origin` resolves to the repo
+  being audited. An empty directory is still cloned into; anything else that
+  does not check out is **refused with a reason rather than deleted**, because
+  the workspace can hold your own checkouts.
+- **`--rule-pack` is genuinely repeatable.** The help text has always presented
+  it as the way to choose packs in local mode, while the parser kept a single
+  value — so `--rule-pack a.md --rule-pack b.md` silently ran only `b.md`. Every
+  occurrence now runs, in the order given, each scoped by its own `applies_to`.
+- **Errors are surfaced rather than swallowed.** Four bugs, one failure mode: an
+  error was detected, collected, and then quietly dropped. The property this
+  restores is that a run which did not complete cannot be mistaken for one that
+  found nothing — the failure mode of an auditing tool that swallows errors is a
+  green report over a broken estate, which is worse than no tool because it is
+  trusted.
+  - A **rule pack that fails to parse** is now reported. `packLoadErrors` was
+    collected on the run report and read by nothing, so a broken pack was
+    silently absent from the audit ([#4]).
+  - A pack whose **`depends_on` chain does not resolve** is no longer reported as
+    *"not in rule-packs/"*. That was false — the pack is on disk — and it sent
+    the reader hunting for a missing file instead of at the dependency error
+    ([#5]).
+  - **Labels that could not be created** are reported. `ensureLabels` discarded
+    the `gh` result entirely, so a run that could not create its labels filed
+    issues without them — silently breaking dedup and suppression — and said
+    nothing. It stays best-effort; it is no longer silent ([#7]).
+  - A **missing or unreadable `sentinel.yaml`** prints a sentence instead of a
+    raw `ENOENT` stack trace. This is the first thing anyone hits running
+    `sentinel run` outside a configured directory ([#8]).
+- **The dashboard no longer renders a broken run as a clean one.** `targetErrors`
+  was persisted on every run record and displayed nowhere, so a run in which
+  every repository failed to clone showed *"0 finding(s) across 0 repo(s)"* in
+  the same calm grey as a genuinely clean estate. There is now a warning banner
+  for the latest run and a Problems column across the history.
+- **Run records carry pack load failures**, so a finding count of zero can be
+  read as "nothing found" or "nothing ran" from the durable artifact alone.
+- **Dry runs surface pack problems too.** Every group reading "none" is
+  indistinguishable from a clean audit when no pack actually ran.
 # 0.1.0-alpha.3
 
 Release plumbing only — no changes to Sentinel itself.
