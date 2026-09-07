@@ -24,6 +24,18 @@ export interface RepoRunRecord {
 	findings: number;
 	bySeverity: SeverityCounts;
 	packs: PackRunRecord[];
+	/**
+	 * Packs that re-read every file on a target that asked for incremental
+	 * scanning, as `pack — reason` lines.
+	 *
+	 * In the durable record and not only the run report, because the report is
+	 * an Actions step summary that expires. An operator who enabled incremental
+	 * scanning, opened the dashboard a week later and asked why a run did a full
+	 * read would otherwise have nowhere to look — and this is their only signal
+	 * that the setting they turned on is not doing anything. Same reason
+	 * `packLoadErrors` is on the record rather than only in the console.
+	 */
+	fullPasses?: string[];
 }
 
 /** The mode a run executed in. */

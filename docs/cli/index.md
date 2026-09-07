@@ -51,6 +51,10 @@ npx @nanocollective/sentinel run \
 | `--repo <path>` | Path to the repository to audit (a local checkout). |
 | `--output <path>` | Where to write the findings Markdown. Defaults to stdout / a local file. |
 | `--dry-run` | In the Actions context, do the full audit but file no issues (see [run modes](../workflow/index.md#run-modes)). |
+| `--full` | Re-audit every file, ignoring the [incremental cache](../configuration/index.md#incremental). Always available, and the way back to a complete pass on demand. |
+| `--cache-file <path>` | Where the incremental cache lives. Defaults to `./.sentinel-cache.json`. |
+
+A dry run neither reads nor writes the incremental cache: a preview must not narrow a later audit, and must not record a pass it did not make.
 
 ### Local run vs. Actions run
 

@@ -1,6 +1,9 @@
 import test from 'ava';
 import type {SentinelConfig} from '../config/types.js';
 import {readMarker} from '../dedup/markers.js';
+import {lookup} from '../incremental/cache.js';
+import {CacheSession} from '../incremental/session.js';
+import {emptyCache} from '../incremental/types.js';
 import type {
 	CreatedIssue,
 	CreateIssueParams,
@@ -10,6 +13,7 @@ import type {
 } from '../issues/types.js';
 import type {ModelRunner, ModelRunResult} from '../orchestrator/types.js';
 import type {SourceFile} from '../prompt/types.js';
+import {matchesGlob} from '../rule-packs/glob.js';
 import type {RulePack} from '../rule-packs/types.js';
 import {runFromConfig, runLocal} from './run.js';
 import type {LoadedPacks, PackLoader, RepoFiles} from './types.js';
@@ -532,4 +536,388 @@ test('a config-driven run holds nothing, because it reads everything', async t =
 		OPTIONS,
 	);
 	t.is(report.reconciled[0]?.result.held, 0);
+});
+
+/** RepoFiles that serve a fixed file list and record every read's patterns. */
+function recordingFiles(files: SourceFile[]) {
+	const reads: string[][] = [];
+	const repoFilesImpl: RepoFiles = {
+		async read(_dir, patterns): Promise<SourceFile[]> {
+			reads.push(patterns);
+			return files.filter(
+				file =>
+					patterns.length === 0 ||
+					patterns.some(pattern => matchesGlob(pattern, file.path)),
+			);
+		},
+		async readText(): Promise<string | null> {
+			return null;
+		},
+	};
+	return {files: repoFilesImpl, reads};
+}
+
+function cacheSession(changed: string[] | null, head = 'sha-new') {
+	return new CacheSession(emptyCache(), {
+		head: () => head,
+		changedSince: () => changed,
+	});
+}
+
+const INCREMENTAL_CONFIG = config({
+	targets: [{repo: 'my-org/a', rulePacks: ['p'], incremental: true}],
+});
+
+test('the first run has no cache, so it reads everything', async t => {
+	const {files, reads} = recordingFiles([
+		{path: 'src/a.ts', content: 'a'},
+		{path: 'src/b.ts', content: 'b'},
+	]);
+	const cache = cacheSession([]);
+	const report = await runFromConfig(
+		INCREMENTAL_CONFIG,
+		{
+			runner: findingRunner(),
+			files,
+			packs: packLoader({packs: [pack('p')], errors: []}),
+			cache,
+			now: NOW,
+		},
+		OPTIONS,
+	);
+	t.deepEqual(reads, [['src/**/*.ts']], 'one union read of the pack patterns');
+	t.is(report.outcome.repos[0]?.packs[0]?.findings.length, 1);
+});
+
+test('a completed pass records the commit for next time', async t => {
+	const {files} = recordingFiles([{path: 'src/a.ts', content: 'a'}]);
+	const cache = cacheSession([]);
+	await runFromConfig(
+		INCREMENTAL_CONFIG,
+		{
+			runner: findingRunner(),
+			files,
+			packs: packLoader({packs: [pack('p')], errors: []}),
+			cache,
+			now: NOW,
+		},
+		OPTIONS,
+	);
+	t.is(lookup(cache.result(), 'my-org/a', 'p')?.sha, 'sha-new');
+});
+
+test('a pack whose audit failed records nothing', async t => {
+	// Recording a commit for a pass that errored would let the next run skip
+	// files on the strength of an audit that never happened.
+	const {files} = recordingFiles([{path: 'src/a.ts', content: 'a'}]);
+	const cache = cacheSession([]);
+	await runFromConfig(
+		INCREMENTAL_CONFIG,
+		{
+			runner: {
+				async run(): Promise<ModelRunResult> {
+					return {ok: false, output: '', error: 'model exploded'};
+				},
+			},
+			files,
+			packs: packLoader({packs: [pack('p')], errors: []}),
+			cache,
+			now: NOW,
+		},
+		OPTIONS,
+	);
+	t.is(lookup(cache.result(), 'my-org/a', 'p'), undefined);
+});
+
+test('a second run reads only what changed, and holds nothing it did read', async t => {
+	const all = [
+		{path: 'src/a.ts', content: 'a'},
+		{path: 'src/b.ts', content: 'b'},
+	];
+	// Seed the cache as a completed first pass would have left it.
+	const first = cacheSession([], 'sha-1');
+	await runFromConfig(
+		INCREMENTAL_CONFIG,
+		{
+			runner: findingRunner(),
+			files: recordingFiles(all).files,
+			packs: packLoader({packs: [pack('p')], errors: []}),
+			cache: first,
+			now: NOW,
+		},
+		OPTIONS,
+	);
+
+	const {files, reads} = recordingFiles(all);
+	const second = new CacheSession(first.result(), {
+		head: () => 'sha-2',
+		changedSince: () => ['src/b.ts'],
+	});
+	await runFromConfig(
+		INCREMENTAL_CONFIG,
+		{
+			runner: findingRunner(),
+			files,
+			packs: packLoader({packs: [pack('p')], errors: []}),
+			cache: second,
+			now: NOW,
+		},
+		OPTIONS,
+	);
+	t.deepEqual(reads, [['src/b.ts']], 'only the changed file is read');
+});
+
+test('a target that did not opt in is never incremental', async t => {
+	const all = [
+		{path: 'src/a.ts', content: 'a'},
+		{path: 'src/b.ts', content: 'b'},
+	];
+	const first = cacheSession([], 'sha-1');
+	await runFromConfig(
+		config(),
+		{
+			runner: findingRunner(),
+			files: recordingFiles(all).files,
+			packs: packLoader({packs: [pack('p')], errors: []}),
+			cache: first,
+			now: NOW,
+		},
+		OPTIONS,
+	);
+
+	const {files, reads} = recordingFiles(all);
+	await runFromConfig(
+		config(),
+		{
+			runner: findingRunner(),
+			files,
+			packs: packLoader({packs: [pack('p')], errors: []}),
+			cache: new CacheSession(first.result(), {
+				head: () => 'sha-2',
+				changedSince: () => ['src/b.ts'],
+			}),
+			now: NOW,
+		},
+		OPTIONS,
+	);
+	t.deepEqual(reads, [['src/**/*.ts']], 'still a full union read');
+});
+
+test('--full overrides a warm cache', async t => {
+	const all = [{path: 'src/a.ts', content: 'a'}];
+	const first = cacheSession([], 'sha-1');
+	await runFromConfig(
+		INCREMENTAL_CONFIG,
+		{
+			runner: findingRunner(),
+			files: recordingFiles(all).files,
+			packs: packLoader({packs: [pack('p')], errors: []}),
+			cache: first,
+			now: NOW,
+		},
+		OPTIONS,
+	);
+
+	const {files, reads} = recordingFiles(all);
+	await runFromConfig(
+		INCREMENTAL_CONFIG,
+		{
+			runner: findingRunner(),
+			files,
+			packs: packLoader({packs: [pack('p')], errors: []}),
+			cache: new CacheSession(first.result(), {
+				head: () => 'sha-2',
+				changedSince: () => [],
+			}),
+			now: NOW,
+		},
+		{...OPTIONS, full: true},
+	);
+	t.deepEqual(reads, [['src/**/*.ts']]);
+});
+
+test('an incremental run holds the issues whose files it skipped', async t => {
+	// The acceptance property, end to end: a repo audited incrementally, an open
+	// issue against a file this run did not read, and no ageing of that issue.
+	const all = [
+		{path: 'src/a.ts', content: 'a'},
+		{path: 'src/b.ts', content: 'b'},
+	];
+	const first = cacheSession([], 'sha-1');
+	const {client: firstClient, created} = fakeClient();
+	await runFromConfig(
+		INCREMENTAL_CONFIG,
+		{
+			runner: findingRunner(),
+			files: recordingFiles(all).files,
+			packs: packLoader({packs: [pack('p')], errors: []}),
+			client: firstClient,
+			cache: first,
+			now: NOW,
+		},
+		OPTIONS,
+	);
+	const filed = created[0];
+	t.truthy(filed, 'the first run filed an issue');
+	t.is(readMarker(filed?.body ?? '', 'pack'), 'p');
+
+	// Second run: the finding's file is unchanged, so the pack never reads it.
+	// The finding is therefore absent — and must not be read as fixed.
+	const existing: ExistingIssue[] = [
+		{
+			number: 1,
+			url: 'u',
+			state: 'open',
+			labels: ['sentinel'],
+			body: filed?.body ?? '',
+		},
+	];
+	const secondClient: ReconcileClient = {
+		async ensureLabels(): Promise<LabelFailure[]> {
+			return [];
+		},
+		async createIssue(): Promise<CreatedIssue> {
+			return {number: 2, url: 'u'};
+		},
+		async listIssues(): Promise<ExistingIssue[]> {
+			return existing;
+		},
+		async updateIssue(): Promise<void> {},
+		async closeIssue(): Promise<void> {},
+	};
+	const report = await runFromConfig(
+		INCREMENTAL_CONFIG,
+		{
+			runner: {
+				async run(): Promise<ModelRunResult> {
+					return {ok: true, output: '[]'};
+				},
+			},
+			files: recordingFiles(all).files,
+			packs: packLoader({packs: [pack('p')], errors: []}),
+			client: secondClient,
+			cache: new CacheSession(first.result(), {
+				head: () => 'sha-2',
+				changedSince: () => ['src/other.ts'],
+			}),
+			now: NOW,
+		},
+		{...OPTIONS, resolveAfterMisses: 1},
+	);
+
+	const result = report.reconciled[0]?.result;
+	t.is(result?.held, 1, 'held');
+	t.is(result?.incremented, 0, 'not aged');
+	t.is(result?.resolved, 0, 'and not closed, even at a threshold of 1');
+});
+
+test('a pack with nothing changed reads nothing and calls no model', async t => {
+	// The bug this guards: `RepoFiles.read` treats an empty pattern list as "the
+	// whole repository", so a pack with nothing to re-read would read everything
+	// and then record a scope claiming it had — incremental scanning becoming a
+	// silent no-op on the commonest case of all.
+	const all = [
+		{path: 'src/a.ts', content: 'a'},
+		{path: 'src/b.ts', content: 'b'},
+	];
+	const first = cacheSession([], 'sha-1');
+	await runFromConfig(
+		INCREMENTAL_CONFIG,
+		{
+			runner: findingRunner(),
+			files: recordingFiles(all).files,
+			packs: packLoader({packs: [pack('p')], errors: []}),
+			cache: first,
+			now: NOW,
+		},
+		OPTIONS,
+	);
+
+	const {files, reads} = recordingFiles(all);
+	let modelCalls = 0;
+	const report = await runFromConfig(
+		INCREMENTAL_CONFIG,
+		{
+			runner: {
+				async run(): Promise<ModelRunResult> {
+					modelCalls++;
+					return {ok: true, output: JSON.stringify([FINDING])};
+				},
+			},
+			files,
+			packs: packLoader({packs: [pack('p')], errors: []}),
+			cache: new CacheSession(first.result(), {
+				head: () => 'sha-2',
+				changedSince: () => [],
+			}),
+			now: NOW,
+		},
+		OPTIONS,
+	);
+
+	t.deepEqual(reads, [], 'no read at all');
+	t.is(modelCalls, 0, 'and no model call');
+	t.is(report.outcome.repos[0]?.packs[0]?.findings.length, 0);
+	t.true(report.outcome.repos[0]?.packs[0]?.ok, 'the pass completed');
+});
+
+test('a pack that scanned nothing holds every one of its issues', async t => {
+	// The other half of the same bug. If the empty read had returned the whole
+	// repo, the scope would claim every file was scanned and nothing would be
+	// held — so an unchanged repo would age out its own open findings.
+	const all = [{path: 'src/a.ts', content: 'a'}];
+	const first = cacheSession([], 'sha-1');
+	const {client: firstClient, created} = fakeClient();
+	await runFromConfig(
+		INCREMENTAL_CONFIG,
+		{
+			runner: findingRunner(),
+			files: recordingFiles(all).files,
+			packs: packLoader({packs: [pack('p')], errors: []}),
+			client: firstClient,
+			cache: first,
+			now: NOW,
+		},
+		OPTIONS,
+	);
+
+	const existing: ExistingIssue[] = [
+		{
+			number: 1,
+			url: 'u',
+			state: 'open',
+			labels: ['sentinel'],
+			body: created[0]?.body ?? '',
+		},
+	];
+	const client: ReconcileClient = {
+		async ensureLabels(): Promise<LabelFailure[]> {
+			return [];
+		},
+		async createIssue(): Promise<CreatedIssue> {
+			return {number: 2, url: 'u'};
+		},
+		async listIssues(): Promise<ExistingIssue[]> {
+			return existing;
+		},
+		async updateIssue(): Promise<void> {},
+		async closeIssue(): Promise<void> {},
+	};
+	const report = await runFromConfig(
+		INCREMENTAL_CONFIG,
+		{
+			runner: findingRunner(),
+			files: recordingFiles(all).files,
+			packs: packLoader({packs: [pack('p')], errors: []}),
+			client,
+			cache: new CacheSession(first.result(), {
+				head: () => 'sha-2',
+				changedSince: () => [],
+			}),
+			now: NOW,
+		},
+		{...OPTIONS, resolveAfterMisses: 1},
+	);
+	t.is(report.reconciled[0]?.result.held, 1);
+	t.is(report.reconciled[0]?.result.resolved, 0);
 });

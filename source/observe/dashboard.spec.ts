@@ -237,3 +237,25 @@ test('a record written before packLoadErrors existed still renders', t => {
 	t.true(html.includes('<!doctype html>'));
 	t.false(html.includes('did not complete'));
 });
+
+test('the dashboard surfaces packs that re-read everything', t => {
+	const html = renderDashboard([
+		record({
+			repos: [
+				{
+					repo: 'org/a',
+					findings: 0,
+					bySeverity: {low: 0, medium: 0, high: 0, critical: 0},
+					packs: [],
+					fullPasses: ['db-safety — the cached commit is unreachable'],
+				},
+			],
+		}),
+	]);
+	t.true(html.includes('re-read every file'));
+	t.true(html.includes('db-safety'));
+});
+
+test('a run with no full passes gets no notice', t => {
+	t.false(renderDashboard([record()]).includes('re-read every file'));
+});

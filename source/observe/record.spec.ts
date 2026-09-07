@@ -286,3 +286,49 @@ test('held issues are carried into the durable record', t => {
 	);
 	t.is(record.filing?.held, 5, 'summed across repos');
 });
+
+test('full-pass reasons reach the durable record', t => {
+	// The run report is an Actions step summary that expires. An operator asking
+	// a week later why a run did a full read needs it in the record, which is
+	// also their only signal that incremental scanning is not saving anything.
+	const record = buildRunRecord(
+		report({
+			outcome: {
+				repos: [
+					{
+						repo: 'org/a',
+						packs: [pack([])],
+						missingPacks: [],
+						unresolvedPacks: [],
+						fullPasses: [{pack: 'db-safety', reason: 'sha-unreachable'}],
+					},
+				],
+			},
+		}),
+		'2026-07-21T06:00:00.000Z',
+		'live',
+	);
+	t.is(record.repos[0]?.fullPasses?.length, 1);
+	t.true(record.repos[0]?.fullPasses?.[0]?.includes('db-safety'));
+	t.true(record.repos[0]?.fullPasses?.[0]?.includes('unreachable'));
+});
+
+test('a repo with no full passes writes no key', t => {
+	const built = buildRunRecord(
+		report({
+			outcome: {
+				repos: [
+					{
+						repo: 'org/a',
+						packs: [pack([])],
+						missingPacks: [],
+						unresolvedPacks: [],
+					},
+				],
+			},
+		}),
+		'2026-07-21T06:00:00.000Z',
+		'audit-only',
+	);
+	t.is(built.repos[0]?.fullPasses, undefined);
+});

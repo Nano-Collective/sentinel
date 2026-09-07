@@ -7,6 +7,7 @@
 import type {Finding} from '../findings/types.js';
 import type {ValidationError} from '../findings/validate.js';
 import type {SeverityOverride} from '../findings/weighting.js';
+import type {FullReason} from '../incremental/decide.js';
 import type {SourceFile} from '../prompt/types.js';
 import type {RulePack, RulePackError} from '../rule-packs/types.js';
 
@@ -84,10 +85,24 @@ export interface UnresolvedPack {
 	errors: RulePackError[];
 }
 
+/** A pack that read every file this run, and why it had to. */
+export interface FullPassNote {
+	pack: string;
+	reason: FullReason;
+}
+
 /** All pack outcomes for one repository. */
 export interface RepoOutcome {
 	repo: string;
 	packs: PackOutcome[];
+	/**
+	 * Packs that read everything despite this target asking for incremental
+	 * scanning, and why. Empty when the target did not opt in — a list of
+	 * "incremental is off" for every pack would bury the case that matters,
+	 * which is an operator who turned it on and is wondering why nothing got
+	 * faster.
+	 */
+	fullPasses?: FullPassNote[];
 	/** Packs named by the target but missing from the rule-packs directory. */
 	missingPacks: string[];
 	/** Packs present on disk whose `depends_on` chain failed to resolve. */

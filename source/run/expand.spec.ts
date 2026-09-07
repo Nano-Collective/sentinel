@@ -20,7 +20,9 @@ function lister(
 test('passes explicit repo targets through', async t => {
 	const targets: Target[] = [{repo: 'my-org/a', rulePacks: ['p']}];
 	const result = await expandTargets(targets);
-	t.deepEqual(result.targets, [{repo: 'my-org/a', rulePacks: ['p']}]);
+	t.deepEqual(result.targets, [
+		{repo: 'my-org/a', rulePacks: ['p'], incremental: false},
+	]);
 	t.deepEqual(result.errors, []);
 });
 
@@ -80,4 +82,32 @@ test('records an error when listing fails', async t => {
 	);
 	t.is(result.targets.length, 0);
 	t.true(result.errors[0]?.includes('gh auth expired'));
+});
+
+test('a target opting in to incremental carries the flag through', async t => {
+	const result = await expandTargets([
+		{repo: 'my-org/a', rulePacks: ['p'], incremental: true},
+	]);
+	t.true(result.targets[0]?.incremental);
+});
+
+test('one target wanting a full read wins over another opting in', async t => {
+	// A repo can match several targets. Taking the union of their packs but the
+	// OR of their flags would let an unrelated pattern silently cause a target's
+	// files to be skipped, so the merge is an AND.
+	const result = await expandTargets([
+		{repo: 'my-org/a', rulePacks: ['p'], incremental: true},
+		{repo: 'my-org/a', rulePacks: ['q']},
+	]);
+	t.is(result.targets.length, 1);
+	t.deepEqual(result.targets[0]?.rulePacks, ['p', 'q'], 'packs still union');
+	t.false(result.targets[0]?.incremental, 'but the flag does not');
+});
+
+test('the AND holds regardless of the order the targets appear in', async t => {
+	const result = await expandTargets([
+		{repo: 'my-org/a', rulePacks: ['q']},
+		{repo: 'my-org/a', rulePacks: ['p'], incremental: true},
+	]);
+	t.false(result.targets[0]?.incremental);
 });

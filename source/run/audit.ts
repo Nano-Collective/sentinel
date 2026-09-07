@@ -73,3 +73,26 @@ export async function auditPack(
 		},
 	};
 }
+
+/**
+ * The outcome of a pack that had nothing to audit — an incremental pass in
+ * which no file the pack applies to changed.
+ *
+ * Deliberately not a model call with an empty file list. Beyond the wasted
+ * request, asking a model to audit nothing invites it to answer with something.
+ * It counts as `ok`: the pack ran to completion and found nothing, which is a
+ * different claim from a pass that errored, and the cache may only advance on
+ * the former.
+ */
+export function skippedPackOutcome(pack: RulePack): PackOutcome {
+	return {
+		pack: pack.manifest.name,
+		version: pack.manifest.version,
+		findings: [],
+		severityOverrides: [],
+		attempts: 0,
+		ok: true,
+		errors: [],
+		usage: {durationMs: 0, promptTokens: 0, outputTokens: 0},
+	};
+}

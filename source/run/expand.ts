@@ -13,6 +13,13 @@ import type {RepoLister} from './repo-lister.js';
 export interface ResolvedRepoTarget {
 	repo: string;
 	rulePacks: string[];
+	/**
+	 * True only when *every* target that contributed to this repo asked for
+	 * incremental scanning. A repo can match several targets, and one of them
+	 * expecting a complete re-read has to win — the alternative is a target
+	 * silently having its files skipped because an unrelated pattern opted in.
+	 */
+	incremental: boolean;
 }
 
 /** The outcome of expanding targets. */
@@ -22,16 +29,27 @@ export interface ExpandResult {
 	errors: string[];
 }
 
+interface Accumulated {
+	packs: Set<string>;
+	incremental: boolean;
+}
+
 function addRepo(
-	byRepo: Map<string, Set<string>>,
+	byRepo: Map<string, Accumulated>,
 	repo: string,
-	rulePacks: string[],
+	target: Target,
 ): void {
-	const packs = byRepo.get(repo) ?? new Set<string>();
-	for (const pack of rulePacks) {
+	const existing = byRepo.get(repo);
+	const packs = existing?.packs ?? new Set<string>();
+	for (const pack of target.rulePacks) {
 		packs.add(pack);
 	}
-	byRepo.set(repo, packs);
+	const incremental = target.incremental === true;
+	byRepo.set(repo, {
+		packs,
+		// AND, not OR: every contributing target must have opted in.
+		incremental: existing ? existing.incremental && incremental : incremental,
+	});
 }
 
 /**
@@ -43,13 +61,13 @@ export async function expandTargets(
 	targets: Target[],
 	lister?: RepoLister,
 ): Promise<ExpandResult> {
-	const byRepo = new Map<string, Set<string>>();
+	const byRepo = new Map<string, Accumulated>();
 	const errors: string[] = [];
 	const listed = new Map<string, string[]>();
 
 	for (const target of targets) {
 		if (target.repo) {
-			addRepo(byRepo, target.repo, target.rulePacks);
+			addRepo(byRepo, target.repo, target);
 			continue;
 		}
 		if (!target.pattern) {
@@ -84,12 +102,16 @@ export async function expandTargets(
 
 		const matched = repos.filter(repo => matchesGlob(pattern, repo));
 		for (const repo of matched) {
-			addRepo(byRepo, repo, target.rulePacks);
+			addRepo(byRepo, repo, target);
 		}
 	}
 
 	const resolved: ResolvedRepoTarget[] = [...byRepo.entries()].map(
-		([repo, packs]) => ({repo, rulePacks: [...packs]}),
+		([repo, {packs, incremental}]) => ({
+			repo,
+			rulePacks: [...packs],
+			incremental,
+		}),
 	);
 	return {targets: resolved, errors};
 }

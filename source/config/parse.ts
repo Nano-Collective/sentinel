@@ -102,7 +102,20 @@ function validateTarget(
 		}
 	}
 
+	if (
+		value.incremental !== undefined &&
+		typeof value.incremental !== 'boolean'
+	) {
+		errors.push({
+			field: `${field}.incremental`,
+			message: 'incremental must be a boolean',
+		});
+	}
+
 	const target: Target = {rulePacks};
+	if (typeof value.incremental === 'boolean') {
+		target.incremental = value.incremental;
+	}
 	if (hasRepo && typeof value.repo === 'string') {
 		target.repo = value.repo;
 	}

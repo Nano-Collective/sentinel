@@ -4,6 +4,7 @@
  */
 
 import {SEVERITIES, type Severity} from '../findings/types.js';
+import {explainFullReason} from '../incremental/decide.js';
 import type {RunReport} from '../run/run.js';
 import type {RepoOutcome} from '../run/types.js';
 import type {
@@ -40,7 +41,18 @@ function repoRecord(outcome: RepoOutcome): RepoRunRecord {
 			ok: pack.ok,
 		};
 	});
-	return {repo: outcome.repo, findings, bySeverity, packs};
+	const record: RepoRunRecord = {
+		repo: outcome.repo,
+		findings,
+		bySeverity,
+		packs,
+	};
+	if (outcome.fullPasses && outcome.fullPasses.length > 0) {
+		record.fullPasses = outcome.fullPasses.map(
+			note => `${note.pack} — ${explainFullReason(note.reason)}`,
+		);
+	}
+	return record;
 }
 
 /** Build a run record from a report, a timestamp, and the run mode. */
