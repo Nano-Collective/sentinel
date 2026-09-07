@@ -93,11 +93,15 @@ jobs:
           --output "$GITHUB_STEP_SUMMARY"
           \${{ github.event.inputs.dry_run == 'true' && '--dry-run' || '' }}
 
-      - name: Commit run record and dashboard
+      - name: Commit run record, dashboard and incremental cache
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add runs dashboard
+          # The incremental cache has to survive between runs or every run finds
+          # no cache and re-reads everything — incremental scanning would look
+          # enabled and do nothing. Tolerated when absent: a dry run writes none.
+          git add .sentinel-cache.json || true
           if ! git diff --cached --quiet; then
             git commit -m "chore: sentinel run record [skip ci]"
             git push
@@ -209,6 +213,7 @@ the example block and set its key as an environment variable / Actions secret.
 - \`rule-packs/\` — your rule packs (you author these).
 - \`.github/workflows/sentinel.yml\` — the scheduled audit.
 - \`runs/\` — a committed JSON record per run (the durable history).
+- \`.sentinel-cache.json\` — what each pack last audited, for incremental runs.
 - \`dashboard/\` — a generated static \`index.html\`; serve it via GitHub Pages.
 `;
 }

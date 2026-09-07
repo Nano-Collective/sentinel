@@ -30,4 +30,5 @@ the example block and set its key as an environment variable / Actions secret.
 - `rule-packs/` — your rule packs (you author these).
 - `.github/workflows/sentinel.yml` — the scheduled audit.
 - `runs/` — a committed JSON record per run (the durable history).
+- `.sentinel-cache.json` — what each pack last audited, for incremental runs.
 - `dashboard/` — a generated static `index.html`; serve it via GitHub Pages.

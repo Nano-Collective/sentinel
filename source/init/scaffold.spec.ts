@@ -81,3 +81,20 @@ test('force overwrites existing files', t => {
 		rmSync(dir, {recursive: true, force: true});
 	}
 });
+
+test('the scaffolded workflow commits the incremental cache', t => {
+	// Without this the cache is written and thrown away on the next checkout, so
+	// every scheduled run finds no cache and re-reads everything — incremental
+	// scanning would look enabled and quietly do nothing.
+	const dir = freshDir();
+	try {
+		scaffold(OPTIONS, dir);
+		const workflow = readFileSync(
+			join(dir, '.github/workflows/sentinel.yml'),
+			'utf8',
+		);
+		t.true(workflow.includes('.sentinel-cache.json'));
+	} finally {
+		rmSync(dir, {recursive: true, force: true});
+	}
+});
