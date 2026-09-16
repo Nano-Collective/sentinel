@@ -1,5 +1,7 @@
 import test from 'ava';
 import type {SentinelConfig} from '../config/types.js';
+import {findingHash} from '../dedup/hash.js';
+import {readMarker} from '../dedup/markers.js';
 import type {Finding, Severity} from '../findings/types.js';
 import {
 	buildIssueContent,
@@ -144,4 +146,25 @@ test('fileFindings captures a create failure without aborting the batch', async 
 	t.is(result.errors.length, 1);
 	t.is(result.errors[0]?.error, 'API rate limited');
 	t.is(result.errors[0]?.finding.file, 'bad.rs');
+});
+
+test('a marker-like snippet does not corrupt the filed body', t => {
+	const content = buildIssueContent(
+		{
+			...finding('critical', 'src/db/query.ts'),
+			offendingSnippet:
+				'const marker = "<!-- sentinel:hash="; // no close nearby',
+			summary: 'dangling prefix test',
+		},
+		config({severityThreshold: 'low'}),
+		{auditedRepo: 'my-org/my-program'},
+	);
+
+	// Exactly one hash marker, and the body is not spliced back into itself.
+	t.is(content.body.split('<!-- sentinel:hash=').length - 1, 1);
+	t.is(content.body.split('### Offending code').length - 1, 1);
+	t.is(
+		readMarker(content.body, 'hash'),
+		findingHash(finding('critical', 'src/db/query.ts')),
+	);
 });

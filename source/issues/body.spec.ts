@@ -84,3 +84,23 @@ test('body uses a fence that survives backticks in the snippet', t => {
 	t.true(body.includes('````'));
 	t.true(body.includes(snippet));
 });
+
+test('marker syntax in model-authored fields is defused', t => {
+	const body = buildIssueBody(
+		finding({
+			summary: 'found <!-- sentinel:hash= in the source',
+			rationale: 'the literal <!-- sentinel:misses= appears here too',
+			offendingSnippet: 'const m = "<!-- sentinel:hash="; // no close',
+			suggestedNextSteps: 'stop emitting <!-- sentinel:last-seen=',
+		}),
+		CTX,
+	);
+
+	// No field can produce a string dedup would mistake for one of its markers.
+	t.false(body.includes('<!-- sentinel:hash='));
+	t.false(body.includes('<!-- sentinel:misses='));
+	t.false(body.includes('<!-- sentinel:last-seen='));
+	// The text itself still reads the same to a human.
+	t.true(body.includes('// no close'));
+	t.true(body.includes('stop emitting'));
+});
