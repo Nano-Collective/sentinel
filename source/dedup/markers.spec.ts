@@ -40,3 +40,34 @@ test('a marker value does not leak into readMarker of another key', t => {
 	t.is(readMarker(body, 'last-seen'), '2026-07-21T06:00:00.000Z');
 	t.is(readMarker(body, 'hash'), null);
 });
+
+test('upsertMarker appends when a quoted opener has no close', t => {
+	const quoted = 'body with `<!-- sentinel:hash=` quoted from audited code';
+	const body = upsertMarker(quoted, 'hash', 'abc123');
+	// The quoted text is left alone and exactly one real marker is added.
+	t.true(body.startsWith(quoted));
+	t.is(readMarker(body, 'hash'), 'abc123');
+	t.is(body.split('<!-- sentinel:hash=').length - 1, 2);
+});
+
+test('upsertMarker does not splice against a quoted opener', t => {
+	// A quoted opener ahead of the real markers used to borrow the next
+	// marker's close, so the splice deleted everything in between.
+	const stored = [
+		'### Offending code',
+		'```',
+		'let s = "<!-- sentinel:misses=";',
+		'```',
+		'',
+		'trailing content',
+		'<!-- sentinel:hash=realhash -->',
+		'<!-- sentinel:misses=0 -->',
+	].join('\n');
+
+	t.is(readMarker(stored, 'misses'), '0');
+
+	const aged = upsertMarker(stored, 'misses', '1');
+	t.true(aged.includes('trailing content'));
+	t.is(readMarker(aged, 'hash'), 'realhash');
+	t.is(readMarker(aged, 'misses'), '1');
+});

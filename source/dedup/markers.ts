@@ -6,36 +6,75 @@
  */
 
 const PREFIX = 'sentinel';
+const COMMENT_OPEN = '<!--';
+const OPEN = `${COMMENT_OPEN} ${PREFIX}:`;
 const CLOSE = ' -->';
 
 function open(key: string): string {
-	return `<!-- ${PREFIX}:${key}=`;
+	return `${OPEN}${key}=`;
+}
+
+/**
+ * Where the well-formed marker for `key` sits, or null if there is none. Issue
+ * bodies quote code from the audited repository, so an opener in the body is
+ * not necessarily a marker: quoted ones are skipped rather than spliced
+ * against, which would corrupt the body instead of updating a marker.
+ */
+function findMarker(
+	body: string,
+	key: string,
+): {start: number; valueStart: number; valueEnd: number} | null {
+	const opener = open(key);
+	for (
+		let start = body.indexOf(opener);
+		start !== -1;
+		start = body.indexOf(opener, start + opener.length)
+	) {
+		const valueStart = start + opener.length;
+		const valueEnd = body.indexOf(CLOSE, valueStart);
+		if (valueEnd === -1) {
+			// No close after this opener means none after any later one either.
+			return null;
+		}
+		// A real marker is a single-line comment holding an opaque scalar. A
+		// value spanning a line break or another comment opener means this
+		// opener was quoted text that borrowed a later marker's close.
+		const value = body.slice(valueStart, valueEnd);
+		if (!value.includes('\n') && !value.includes(COMMENT_OPEN)) {
+			return {start, valueStart, valueEnd};
+		}
+	}
+	return null;
+}
+
+/**
+ * Neutralise marker syntax in model-authored text. Findings echo code read from
+ * the audited repository, so a snippet can carry a literal marker opener; left
+ * intact it collides with Sentinel's own markers. The zero-width space keeps
+ * the text visually identical while breaking the match.
+ */
+export function defuseMarkers(text: string): string {
+	return text.replaceAll(OPEN, `${COMMENT_OPEN} ${PREFIX}\u200B:`);
 }
 
 /** Read a marker's value from a body, or null if absent. */
 export function readMarker(body: string, key: string): string | null {
-	const start = body.indexOf(open(key));
-	if (start === -1) {
-		return null;
-	}
-	const valueStart = start + open(key).length;
-	const valueEnd = body.indexOf(CLOSE, valueStart);
-	if (valueEnd === -1) {
-		return null;
-	}
-	return body.slice(valueStart, valueEnd);
+	const found = findMarker(body, key);
+	return found === null ? null : body.slice(found.valueStart, found.valueEnd);
 }
 
 /** Add or replace a marker, returning the updated body. */
 export function upsertMarker(body: string, key: string, value: string): string {
 	const marker = `${open(key)}${value}${CLOSE}`;
-	const start = body.indexOf(open(key));
-	if (start === -1) {
+	const found = findMarker(body, key);
+	if (found === null) {
 		return `${body}\n${marker}`;
 	}
-	const valueEnd = body.indexOf(CLOSE, start);
-	const end = valueEnd + CLOSE.length;
-	return body.slice(0, start) + marker + body.slice(end);
+	return (
+		body.slice(0, found.start) +
+		marker +
+		body.slice(found.valueEnd + CLOSE.length)
+	);
 }
 
 /** Read the consecutive-miss counter, defaulting to 0. */

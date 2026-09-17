@@ -4,6 +4,7 @@
  * degrades gracefully when the optional model-authored fields are absent.
  */
 
+import {defuseMarkers} from '../dedup/markers.js';
 import type {Finding} from '../findings/types.js';
 import type {FilingContext} from './types.js';
 
@@ -41,7 +42,9 @@ export function buildIssueBody(
 	const parts: string[] = [];
 
 	parts.push(
-		finding.summary ?? `A ${category} finding produced by rule \`${rule}\`.`,
+		finding.summary === undefined
+			? `A ${category} finding produced by rule \`${rule}\`.`
+			: defuseMarkers(finding.summary),
 	);
 
 	parts.push(
@@ -53,22 +56,24 @@ export function buildIssueBody(
 	);
 
 	if (finding.rationale) {
-		parts.push(['### Why this severity', '', finding.rationale].join('\n'));
+		parts.push(
+			['### Why this severity', '', defuseMarkers(finding.rationale)].join(
+				'\n',
+			),
+		);
 	}
 
-	const fence = fenceFor(finding.offendingSnippet);
-	parts.push(
-		[
-			'### Offending code',
-			`${fence}`,
-			finding.offendingSnippet,
-			`${fence}`,
-		].join('\n'),
-	);
+	const snippet = defuseMarkers(finding.offendingSnippet);
+	const fence = fenceFor(snippet);
+	parts.push(['### Offending code', fence, snippet, fence].join('\n'));
 
 	if (finding.suggestedNextSteps) {
 		parts.push(
-			['### Suggested next steps', '', finding.suggestedNextSteps].join('\n'),
+			[
+				'### Suggested next steps',
+				'',
+				defuseMarkers(finding.suggestedNextSteps),
+			].join('\n'),
 		);
 	}
 
