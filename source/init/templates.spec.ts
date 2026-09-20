@@ -246,3 +246,27 @@ test('a cloud provider is scaffolded with the endpoint secret placeholder', t =>
 	).nanocoder.providers[0];
 	t.is(entry.apiKey, '${ACME_KEY}');
 });
+
+test('a scaffolded cloud provider carries an output ceiling above the fallback', t => {
+	// Not a tuning knob. The AI SDK infers a model's output ceiling from its id
+	// and falls back to 4096 for anything it does not recognise, which is every
+	// model behind a compatible endpoint that is not the vendor's own. Unset, a
+	// pack that reasons before it answers is truncated mid-sentence having never
+	// emitted the findings array — and a run with nothing parseable reads as
+	// "no findings" rather than as a failure.
+	const entry = JSON.parse(
+		nanocoderConfig(options({provider: 'openai', model: 'gpt-x'})),
+	).nanocoder.providers[0];
+	t.true(
+		typeof entry.maxOutputTokens === 'number' && entry.maxOutputTokens > 4096,
+		'a cloud scaffold would be capped at the 4096 fallback',
+	);
+});
+
+test('a scaffolded local provider is not given an output ceiling', t => {
+	// It does not go through the SDK path that infers one, and an oversized
+	// value is rejected outright by some local endpoints rather than clamped.
+	const entry = JSON.parse(nanocoderConfig(options({provider: 'ollama'})))
+		.nanocoder.providers[0];
+	t.is(entry.maxOutputTokens, undefined);
+});

@@ -48,6 +48,18 @@
   this was not reachable — but it is the shape of a shell injection, and this
   file is the one every install copies. It travels through the environment now.
 
+- **A scaffolded cloud provider carries an output ceiling.** The AI SDK derives
+  a model's output ceiling from its id and falls back to **4096** for anything
+  it does not recognise — every model behind a compatible endpoint that is not
+  that vendor's own. The scaffolded entry set `sdkProvider: anthropic` with no
+  `maxOutputTokens`, so every cloud install was capped there. The effect is not
+  an error: a pack that reasons before it answers is truncated mid-sentence
+  having never emitted the findings array, and a run with nothing parseable
+  reads as *no findings* rather than as a failure. `init` writes a conservative
+  `32000` now, and the docs say why. A local provider does not get one — it
+  does not take the SDK path that infers a ceiling, and an oversized value is
+  rejected outright by some endpoints rather than clamped.
+
 - **The audit agent no longer carries tools it never uses.** The scaffolded
   `agents.config.json` disabled nothing, so the audit read untrusted code in
   auto-approve mode with shell, network, file writes and sub-agents available.

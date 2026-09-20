@@ -107,6 +107,8 @@ Which Nanocoder provider to use. **Local-first is the intended posture**: `ollam
 
 **Where the key lives.** `sentinel.yaml` names *which* model to run; the wiring that reaches it — endpoint, API key — lives in `agents.config.json`, which is the file Nanocoder reads. Reference the key there by name (`"apiKey": "${SENTINEL_MODEL_KEY}"`) and set that name as an Actions secret; never inline it.
 
+**`maxOutputTokens` is not optional on a cloud provider.** The AI SDK derives a model's output ceiling from its id and falls back to **4096** for anything it does not recognise — which is every model behind a compatible endpoint that is not that vendor's own. Left unset, a pack that reasons before it answers is truncated mid-sentence having never emitted the findings array, and a run with nothing parseable **reads as "no findings" rather than as a failure**. `init` writes a conservative `32000` into the entry it scaffolds; keep it, and set one by hand if you add a provider yourself.
+
 That placeholder is also what lets the key through to the model at all — the subprocess environment is an allowlist, and `${...}` references in `agents.config.json` are what populate it. See [What the model subprocess can see](../workflow/index.md#what-the-model-subprocess-can-see).
 
 > `model.fallback.endpoint_secret` was removed before `1.0.0`. It named the

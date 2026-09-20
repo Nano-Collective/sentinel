@@ -36,6 +36,8 @@ The audit runs Nanocoder with writes, shell and network access switched off in
 `agents.config.json`. It reads code and reports; keeping those tools would be
 holding capability the audit never uses over code you did not write.
 
+
+
 ## Layout
 
 - `sentinel.yaml` — targets, schedule, model, and issue routing.

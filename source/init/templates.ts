@@ -30,6 +30,15 @@ export function isLocalProvider(provider: string): boolean {
  */
 const NANOCODER_PACKAGE = '@nanocollective/nanocoder@1';
 
+/**
+ * The output ceiling written into a scaffolded cloud provider. See
+ * `providerEntry` for why leaving it unset is a silent failure rather than an
+ * error. A local provider does not get one: it does not go through the SDK
+ * path that infers the ceiling, and an oversized value is rejected outright by
+ * some endpoints rather than clamped.
+ */
+const CLOUD_MAX_OUTPUT_TOKENS = 32_000;
+
 function targetsBlock(targets: string[]): string {
 	const list = targets.length > 0 ? targets : ['your-org/your-repo'];
 	return list
@@ -257,6 +266,15 @@ function providerEntry(options: InitOptions): Record<string, unknown> {
 		baseUrl: 'https://api.example.com/v1 — replace with your endpoint',
 		apiKey: `\${${options.endpointSecret}}`,
 		models: [options.model],
+		// Not a tuning knob. The AI SDK derives a model's output ceiling from
+		// its id and falls back to 4096 for anything it does not recognise —
+		// which is every model behind a compatible endpoint that is not the
+		// vendor's own. Left unset, a pack that reasons before it answers is
+		// truncated mid-sentence having never emitted the findings array, and a
+		// run with nothing parseable reads as "no findings" rather than as a
+		// failure. Conservative on purpose: a findings array is a few thousand
+		// tokens, and providers disagree about their own ceilings.
+		maxOutputTokens: CLOUD_MAX_OUTPUT_TOKENS,
 	};
 }
 
@@ -350,6 +368,16 @@ through under that name.`
 The audit runs Nanocoder with writes, shell and network access switched off in
 \`agents.config.json\`. It reads code and reports; keeping those tools would be
 holding capability the audit never uses over code you did not write.
+
+${
+	isLocalProvider(options.provider)
+		? ''
+		: `**Keep \`maxOutputTokens\`.** The AI SDK falls back to a 4096-token ceiling
+for any model it does not recognise, which truncates an audit mid-answer — and a
+run with nothing parseable reads as *no findings* rather than as a failure.
+
+`
+}
 
 ## Layout
 
