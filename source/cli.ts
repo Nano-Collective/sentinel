@@ -31,7 +31,11 @@ import {scaffold} from './init/scaffold.js';
 import type {InitOptions} from './init/types.js';
 import {ghIssueClient} from './issues/gh-client.js';
 import {renderDashboard} from './observe/dashboard.js';
-import {buildRunRecord, recordFilename} from './observe/record.js';
+import {
+	buildRunRecord,
+	isReadableRecord,
+	recordFilename,
+} from './observe/record.js';
 import type {RunMode, RunRecord} from './observe/types.js';
 import {nanocoderRunner} from './orchestrator/nanocoder-runner.js';
 import {prepareRepo} from './run/clone.js';
@@ -210,7 +214,16 @@ function readRunRecords(recordsDir: string): RunRecord[] {
 			continue;
 		}
 		try {
-			records.push(JSON.parse(readFileSync(join(recordsDir, name), 'utf8')));
+			const record: RunRecord = JSON.parse(
+				readFileSync(join(recordsDir, name), 'utf8'),
+			);
+			if (!isReadableRecord(record)) {
+				console.error(
+					`run record: ${name} was written by a newer Sentinel (schema ${record.schemaVersion}) and was skipped — upgrade to include it in the dashboard.`,
+				);
+				continue;
+			}
+			records.push(record);
 		} catch {
 			// Skip a malformed record rather than fail the whole read.
 		}

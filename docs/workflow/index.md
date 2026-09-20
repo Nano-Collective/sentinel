@@ -64,7 +64,7 @@ Sentinel is not a model and does not train one. It uses whichever Nanocoder-conf
 There is no database. Run history is:
 
 - **Step summary** — the immediate run's result, in the Actions run.
-- **Run record** — a committed record per run, in the config repo. This is the durable store. Alongside the findings it carries what the run cost the model: requests made, wall-clock time, and tokens sent and received. [`sentinel estimate`](../cli/index.md#estimate) reads those back to calibrate its figures.
+- **Run record** — a committed record per run, in the config repo. This is the durable store. Each carries a `schemaVersion`, because the dashboard reads every record ever written and the corpus is permanently mixed; a record from a newer Sentinel than the one reading it is skipped and named rather than rendered as a shape it does not understand. Alongside the findings it carries what the run cost the model: requests made, wall-clock time, and tokens sent and received. [`sentinel estimate`](../cli/index.md#estimate) reads those back to calibrate its figures.
 - **Dashboard** — a lightweight static site generated into the config repo's GitHub Pages from the committed run records. The read-side surface for trends: per-pack hit rates, findings over time, and aggregate model cost per run.
 
 ## Triggers in v1
