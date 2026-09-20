@@ -62,6 +62,17 @@ jobs:
           # The model key .sentinel/agents.config.json references. Set as an
           # organisation secret; nc-review uses the same one.
           MINIMAX_API_KEY: ${{ secrets.MINIMAX_API_KEY }}
+          # Not optional detail. @ai-sdk/anthropic derives the output ceiling
+          # from the model id and falls back to 4096 for anything that is not a
+          # known Claude model — and minimax-m3 is not one. An audit that
+          # reasons before it answers hits that mid-sentence and stops, having
+          # never emitted the findings array, which reads downstream as "no
+          # findings". nc-review learned this the same way.
+          #
+          # The ceiling itself lives in .sentinel/agents.config.json as
+          # maxOutputTokens; this is the context window, which the model
+          # registry does not know for this model either.
+          NANOCODER_CONTEXT_LIMIT: "128000"
           # Through the environment rather than interpolated into the script.
           # The value is a typed boolean so it cannot carry anything but true
           # or false, but a `${{ }}` inside `run:` is the shape of a shell
@@ -70,6 +81,12 @@ jobs:
           DRY_RUN: ${{ github.event.inputs.dry_run }}
         run: |
           set -euo pipefail
+          # A missing output ceiling is silent: the run does not fail, it gets
+          # 4096 tokens a turn and dies mid-sentence. Cheaper to assert here
+          # than to read it back out of a truncated transcript.
+          jq -e '.nanocoder.providers[0].maxOutputTokens > 4096' \
+            .sentinel/agents.config.json >/dev/null \
+            || { echo "::error::maxOutputTokens missing or at the 4096 fallback"; exit 1; }
           # Only the literal string "true" means dry run. A checkbox left
           # unticked arrives as "false", and a scheduled run sends nothing at
           # all — neither must be mistaken for the flag being set.

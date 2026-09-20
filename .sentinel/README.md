@@ -90,3 +90,23 @@ provider is not the one CI uses.
   to the model subprocess at all.
 - Nothing else. The default `GITHUB_TOKEN` covers reading this repository and
   filing issues on it, so no PAT is involved.
+
+## `maxOutputTokens` is load-bearing
+
+`agents.config.json` sets `maxOutputTokens: 32000`, and the workflow asserts it
+is above 4096 before spending a request. Neither is decoration.
+
+`@ai-sdk/anthropic` derives the output ceiling from the model id and **falls
+back to 4096 for anything that is not a known Claude model**. `minimax-m3` is
+not one. Leave it unset and every turn is capped at 4096 tokens, so an audit
+that reasons before it answers is truncated mid-sentence having never emitted
+the findings array — which arrives downstream as *no findings*, on a run that
+otherwise looks fine.
+
+That is the exact failure this whole install exists to catch, so it would have
+been a poor one to ship. `nc-review` hit it first and its workflow carries the
+same reasoning; the value is deliberately conservative, since a findings array
+is a few thousand tokens and providers disagree about their own ceilings.
+
+`NANOCODER_CONTEXT_LIMIT` is the other half — the *input* window, which the
+model registry does not know for this model either.
