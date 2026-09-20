@@ -74,7 +74,26 @@ test('the workflow wires the token, workspace, and step summary', t => {
 	t.true(yaml.includes('--workspace "$RUNNER_TEMP/sentinel"'));
 	t.true(yaml.includes('--output "$GITHUB_STEP_SUMMARY"'));
 	t.true(yaml.includes('concurrency:'));
-	t.true(yaml.includes("dry_run == 'true'"));
+});
+
+test('the dry-run input reaches the script through the environment', t => {
+	// Not interpolated into `run:`. The input is a typed boolean so it cannot
+	// carry anything but true or false, but a `${{ }}` inside a shell script is
+	// the shape of an injection regardless — and this file is the one every
+	// install copies.
+	const {steps} = auditJob(options());
+	const run = steps.find(step =>
+		step.run?.includes('@nanocollective/sentinel'),
+	);
+	t.is(run?.env?.DRY_RUN, '${{ github.event.inputs.dry_run }}');
+	t.false(
+		(run?.run ?? '').includes('${{'),
+		'the run script interpolates a workflow expression',
+	);
+	// Only the literal "true" may set the flag: an unticked checkbox arrives as
+	// "false", and a scheduled run sends nothing at all. `${DRY_RUN:+...}` would
+	// fire on both.
+	t.true((run?.run ?? '').includes('"${DRY_RUN:-}" = "true"'));
 });
 
 test('the nanocoder config is valid JSON with a providers block', t => {

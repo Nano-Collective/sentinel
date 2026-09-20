@@ -42,6 +42,12 @@
   your `sentinel.yaml` names a provider your `agents.config.json` does not,
   that run now fails and says so rather than quietly using a different one.
 
+- **The scaffolded workflow no longer interpolates a workflow expression into
+  a shell script.** `dry_run` went straight into `run:` as `${{ ... }}`. The
+  input is a typed boolean and cannot carry anything but `true` or `false`, so
+  this was not reachable — but it is the shape of a shell injection, and this
+  file is the one every install copies. It travels through the environment now.
+
 - **The audit agent no longer carries tools it never uses.** The scaffolded
   `agents.config.json` disabled nothing, so the audit read untrusted code in
   auto-approve mode with shell, network, file writes and sub-agents available.
