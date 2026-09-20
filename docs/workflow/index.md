@@ -59,6 +59,28 @@ Two supported shapes:
 
 Sentinel is not a model and does not train one. It uses whichever Nanocoder-configured providers you point it at. If your threat model needs pre-send scrubbing before code reaches a cloud endpoint, compose the workflow with a content-layer tool that fits — that is out of Sentinel's own scope.
 
+### What the model subprocess can see
+
+The audit runs Nanocoder in auto-approve mode against a repository you are auditing rather than one you wrote, with that repository's files in the prompt. The workflow process itself holds `SENTINEL_TOKEN` — a credential the [installation guide](../getting-started/installation.md) tells you to scope across the organisation so findings can be filed on the audited repo.
+
+Nanocoder never receives it. Sentinel builds the subprocess environment from an allowlist rather than handing down its own:
+
+- **Process essentials** — `PATH`, `HOME`, the temp and locale variables, proxy settings, Node's runtime options.
+- **Your model credentials**, derived from your own `agents.config.json`: every `${NAME}` placeholder in that file names a variable the child keeps. Referencing your key as `"apiKey": "${SENTINEL_MODEL_KEY}"` is what lets `SENTINEL_MODEL_KEY` through.
+- **`NANOCODER_CONFIG_DIR`**, pointing at the config repo.
+
+Everything else is dropped, including `GH_TOKEN`, `GITHUB_TOKEN`, and the Actions OIDC and cache tokens. Issues are filed afterwards, by Sentinel, in a separate process that holds the token.
+
+If a provider reads its key straight from the environment instead of through a placeholder, name it in `SENTINEL_PASSTHROUGH_ENV` (comma-separated) and it is allowed through:
+
+```yaml
+- name: Run Sentinel
+  env:
+    GH_TOKEN: ${{ secrets.SENTINEL_TOKEN }}
+    OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+    SENTINEL_PASSTHROUGH_ENV: OPENAI_API_KEY
+```
+
 ## Observability and run history
 
 There is no database. Run history is:

@@ -11,6 +11,7 @@
 
 import {spawnSync} from 'node:child_process';
 import type {ModelConfig} from '../config/types.js';
+import {modelEnvNames, passthroughNames, scopeEnv} from './env.js';
 import type {ModelRunner, ModelRunResult, RunnerOptions} from './types.js';
 
 const DEFAULT_TIMEOUT_MS = 600_000;
@@ -85,18 +86,31 @@ export function parseNanocoderReport(stdout: string): ModelRunResult {
 }
 
 /**
- * The environment for the Nanocoder spawn. When a config dir is given, point
- * Nanocoder at it via NANOCODER_CONFIG_DIR so it loads the config repo's
- * `agents.config.json` regardless of the audited-repo working directory.
+ * The environment for the Nanocoder spawn.
+ *
+ * Scoped, not inherited. Nanocoder reads code from a repository Sentinel does
+ * not control and returns findings; it has no use for the org-wide GitHub token
+ * the audit holds to file issues, which `issues/gh-client.ts` spends in its own
+ * spawn afterwards. See `./env.ts` for why this is an allowlist.
+ *
+ * When a config dir is given, Nanocoder is pointed at it via
+ * NANOCODER_CONFIG_DIR so the provider wiring lives in the config repo
+ * regardless of the audited-repo working directory — and that same file names
+ * the credentials the child is allowed to keep.
  */
 export function buildNanocoderEnv(
 	base: NodeJS.ProcessEnv,
 	configDir?: string,
 ): NodeJS.ProcessEnv {
+	const scoped = scopeEnv(base, [
+		...modelEnvNames(configDir),
+		...passthroughNames(base),
+	]);
 	if (!configDir) {
-		return base;
+		return scoped;
 	}
-	return {...base, NANOCODER_CONFIG_DIR: configDir};
+	scoped.NANOCODER_CONFIG_DIR = configDir;
+	return scoped;
 }
 
 /* c8 ignore start -- spawns a real process; not exercised in unit tests. */
