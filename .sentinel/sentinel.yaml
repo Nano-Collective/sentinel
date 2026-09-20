@@ -27,9 +27,12 @@ schedule: "0 7 * * *"
 severity_threshold: high
 
 # Matches .sentinel/agents.config.json, where the endpoint and key live.
-# `provider` is looked up by `name` there — the two have to agree.
+# `provider` is looked up by `name` there — the two have to agree, and both
+# have to be a name the runner accepts. Nanocoder validates `--provider` and
+# exits on anything outside [a-zA-Z0-9_-], so the provider's own styling of
+# itself ("MiniMax Coding") is not available here.
 model:
-  provider: "MiniMax Coding"
+  provider: minimax-coding
   model: minimax-m3
 
 issues:
