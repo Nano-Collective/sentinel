@@ -1,4 +1,11 @@
-import {mkdirSync, rmSync, writeFileSync} from 'node:fs';
+import {
+	chmodSync,
+	mkdirSync,
+	readFileSync,
+	rmSync,
+	symlinkSync,
+	writeFileSync,
+} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import test from 'ava';
@@ -18,6 +25,42 @@ function write(dir: string, relativePath: string, content: string): void {
 	const full = join(dir, relativePath);
 	mkdirSync(join(full, '..'), {recursive: true});
 	writeFileSync(full, content);
+}
+
+/** Collect what the code under test reported as skipped. */
+async function captureWarnings<T>(
+	run: () => Promise<T>,
+): Promise<{result: T; warnings: string[]}> {
+	const warnings: string[] = [];
+	const original = console.warn;
+	console.warn = (message: unknown) => {
+		warnings.push(String(message));
+	};
+	try {
+		return {result: await run(), warnings};
+	} finally {
+		console.warn = original;
+	}
+}
+
+/**
+ * Whether this environment can stage an unreadable file at all. Running as
+ * root, and on Windows, `chmod 000` does not deny the owner — the test would
+ * assert nothing rather than fail, so it says so instead.
+ */
+function canDenyRead(dir: string): boolean {
+	const probe = join(dir, '.probe');
+	writeFileSync(probe, 'x');
+	chmodSync(probe, 0o000);
+	try {
+		readFileSync(probe, 'utf8');
+		return false;
+	} catch {
+		return true;
+	} finally {
+		chmodSync(probe, 0o644);
+		rmSync(probe, {force: true});
+	}
 }
 
 test('fsRepoFiles reads files matching the patterns and skips noise dirs', async t => {
@@ -120,4 +163,108 @@ test('fsPackLoader returns empty for a missing directory', async t => {
 	const loaded = await fsPackLoader.load(join(tmpdir(), 'does-not-exist-xyz'));
 	t.deepEqual(loaded.packs, []);
 	t.deepEqual(loaded.errors, []);
+});
+
+test('fsRepoFiles skips a dangling symlink instead of throwing', async t => {
+	const dir = freshDir();
+	try {
+		write(dir, 'good.ts', 'ok');
+		try {
+			symlinkSync(join(dir, 'nowhere.ts'), join(dir, 'dangling.ts'));
+		} catch {
+			t.pass('environment cannot create symlinks');
+			return;
+		}
+		const {result: files, warnings} = await captureWarnings(() =>
+			fsRepoFiles.read(dir, []),
+		);
+		t.deepEqual(
+			files.map(f => f.path),
+			['good.ts'],
+		);
+		t.is(warnings.length, 1);
+		t.regex(warnings[0] ?? '', /^skipped .*dangling\.ts: /);
+	} finally {
+		rmSync(dir, {recursive: true, force: true});
+	}
+});
+
+test('fsRepoFiles skips an unreadable file and still reads the rest', async t => {
+	const dir = freshDir();
+	try {
+		if (!canDenyRead(dir)) {
+			t.pass('environment cannot stage an unreadable file');
+			return;
+		}
+		write(dir, 'readable.ts', 'ok');
+		write(dir, 'locked.ts', 'secret');
+		chmodSync(join(dir, 'locked.ts'), 0o000);
+		const {result: files, warnings} = await captureWarnings(() =>
+			fsRepoFiles.read(dir, []),
+		);
+		t.deepEqual(
+			files.map(f => f.path),
+			['readable.ts'],
+		);
+		t.is(warnings.length, 1);
+		t.regex(warnings[0] ?? '', /^skipped .*locked\.ts: /);
+	} finally {
+		chmodSync(join(dir, 'locked.ts'), 0o644);
+		rmSync(dir, {recursive: true, force: true});
+	}
+});
+
+test('fsRepoFiles skips an unreadable directory and reports it', async t => {
+	const dir = freshDir();
+	const locked = join(dir, 'locked');
+	try {
+		if (!canDenyRead(dir)) {
+			t.pass('environment cannot stage an unreadable directory');
+			return;
+		}
+		write(dir, 'good.ts', 'ok');
+		write(dir, 'locked/hidden.ts', 'secret');
+		chmodSync(locked, 0o000);
+		const {result: files, warnings} = await captureWarnings(() =>
+			fsRepoFiles.read(dir, []),
+		);
+		t.deepEqual(
+			files.map(f => f.path),
+			['good.ts'],
+		);
+		t.is(warnings.length, 1);
+		t.regex(warnings[0] ?? '', /^skipped .*locked: /);
+	} finally {
+		chmodSync(locked, 0o755);
+		rmSync(dir, {recursive: true, force: true});
+	}
+});
+
+test('fsPackLoader records an unreadable pack rather than throwing', async t => {
+	const dir = freshDir();
+	try {
+		if (!canDenyRead(dir)) {
+			t.pass('environment cannot stage an unreadable file');
+			return;
+		}
+		write(
+			dir,
+			'good.md',
+			'---\nname: good\nversion: 1.0.0\ncategory: security\n---\nAudit.\n',
+		);
+		write(dir, 'locked.md', '---\nname: locked\nversion: 1.0.0\n---\nAudit.\n');
+		chmodSync(join(dir, 'locked.md'), 0o000);
+		const loaded = await fsPackLoader.load(dir);
+		t.deepEqual(
+			loaded.packs.map(p => p.manifest.name),
+			['good'],
+		);
+		t.is(loaded.errors.length, 1);
+		t.is(loaded.errors[0]?.file, 'locked.md');
+		t.is(loaded.errors[0]?.errors[0]?.field, 'document');
+		t.regex(loaded.errors[0]?.errors[0]?.message ?? '', /could not be read/);
+	} finally {
+		chmodSync(join(dir, 'locked.md'), 0o644);
+		rmSync(dir, {recursive: true, force: true});
+	}
 });

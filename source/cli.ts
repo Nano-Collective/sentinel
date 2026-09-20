@@ -483,6 +483,17 @@ async function main(argv: string[]): Promise<number> {
 	}
 }
 
-main(process.argv.slice(2)).then(code => {
-	process.exit(code);
-});
+main(process.argv.slice(2))
+	.then(code => {
+		process.exit(code);
+	})
+	.catch((error: unknown) => {
+		// Last resort. Anything reaching here is a bug rather than a handled
+		// failure, so it exits non-zero with the stack intact — an unhandled
+		// rejection would otherwise print the same trace and exit 1 anyway, but
+		// without saying which tool produced it.
+		console.error(
+			`sentinel: ${error instanceof Error ? (error.stack ?? error.message) : String(error)}`,
+		);
+		process.exit(1);
+	});
