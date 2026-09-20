@@ -59,6 +59,15 @@ Two supported shapes:
 
 Sentinel is not a model and does not train one. It uses whichever Nanocoder-configured providers you point it at. If your threat model needs pre-send scrubbing before code reaches a cloud endpoint, compose the workflow with a content-layer tool that fits — that is out of Sentinel's own scope.
 
+## When an audit does not happen
+
+The distinction this tool exists to hold is between *nothing was found* and *nothing was looked at*. They produce the same finding count, so a run says which one happened:
+
+- **Every failure reaches the report.** A rule pack that failed to load, a target that could not be checked out, and a pack whose model call failed all appear in a **⚠️ Problems** section appended to whichever report the run produced — live or dry-run. The report is the artefact that gets committed and attached to the step summary, so a partial audit cannot be read later as a complete one.
+- **An incomplete run exits non-zero**, so the scheduled workflow goes red rather than green. A misconfigured or unreachable model would otherwise file no issues, commit a record showing no findings, and leave a green tick every morning.
+
+A pack that ran and found nothing is not a problem and does not trigger either. That is a clean result, and it is reported as one.
+
 ## Observability and run history
 
 There is no database. Run history is:

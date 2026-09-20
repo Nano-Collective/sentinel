@@ -32,6 +32,7 @@ import type {PrepareResult} from './clone.js';
 import {expandTargets} from './expand.js';
 import {
 	type PackFailure,
+	type PackRunError,
 	type PreviewEntry,
 	previewReconciliation,
 } from './preview.js';
@@ -98,6 +99,14 @@ export interface RunReport {
 	packLoadErrors: PackLoadError[];
 	/** Target-expansion and clone failures. */
 	targetErrors: string[];
+	/**
+	 * Packs that ran but produced nothing usable — the model call failed, or its
+	 * output was still malformed after the auto-fix pass. Collected on every run
+	 * rather than only on a dry run's preview: "the audit did not happen" has to
+	 * reach the operator on the path that files issues, not just the one that
+	 * previews them.
+	 */
+	packRunErrors: PackRunError[];
 	/** True if issues were filed (client present and not a dry run). */
 	filed: boolean;
 }
@@ -136,6 +145,17 @@ async function readOverride(
 	return parsed.valid && parsed.override ? parsed.override : undefined;
 }
 
+/**
+ * Why a pack produced no usable findings. One wording, used by both the
+ * dry-run preview and the run-level problems, so the two cannot describe the
+ * same failure differently.
+ */
+function describePackFailure(outcome: PackOutcome): string {
+	return outcome.runError
+		? `run error: ${outcome.runError}`
+		: `malformed output after ${outcome.attempts} attempt(s) (${outcome.errors.length} validation error(s))`;
+}
+
 /** Run an audit driven by a Sentinel config. */
 export async function runFromConfig(
 	config: SentinelConfig,
@@ -147,6 +167,7 @@ export async function runFromConfig(
 	const repos: RepoOutcome[] = [];
 	const reconciled: {repo: string; result: ReconcileResult}[] = [];
 	const previews: PreviewEntry[] = [];
+	const packRunErrors: PackRunError[] = [];
 	const filing = Boolean(deps.client) && !options.dryRun;
 
 	// Expand explicit and pattern targets into concrete repositories.
@@ -285,6 +306,21 @@ export async function runFromConfig(
 			...(fullPasses.length > 0 ? {fullPasses} : {}),
 		});
 
+		// Collected here, on the path every run takes, rather than beside the
+		// dry-run preview below. A pack that never reached the model contributes
+		// no findings, which is indistinguishable from a pack that looked and
+		// found nothing unless the run says which one happened.
+		for (const outcome of packOutcomes) {
+			if (outcome.ok) {
+				continue;
+			}
+			packRunErrors.push({
+				repo: repoName,
+				pack: outcome.pack,
+				reason: describePackFailure(outcome),
+			});
+		}
+
 		if (!deps.client) {
 			continue;
 		}
@@ -339,9 +375,7 @@ export async function runFromConfig(
 				.filter(outcome => !outcome.ok)
 				.map(outcome => ({
 					pack: outcome.pack,
-					reason: outcome.runError
-						? `run error: ${outcome.runError}`
-						: `malformed output after ${outcome.attempts} attempt(s) (${outcome.errors.length} validation error(s))`,
+					reason: describePackFailure(outcome),
 				}));
 			// Pack-selection problems travel with the preview too. A dry run that
 			// omitted them would report "none" in every group for a repo whose
@@ -362,6 +396,7 @@ export async function runFromConfig(
 		previews,
 		packLoadErrors: loaded.errors,
 		targetErrors,
+		packRunErrors,
 		filed: filing,
 	};
 }

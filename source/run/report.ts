@@ -8,6 +8,7 @@ import type {ReconcileResult} from '../dedup/reconcile.js';
 import type {Finding} from '../findings/types.js';
 import type {SeverityOverride} from '../findings/weighting.js';
 import {explainFullReason} from '../incremental/decide.js';
+import type {PackRunError} from './preview.js';
 import type {
 	FullPassNote,
 	PackLoadError,
@@ -181,6 +182,13 @@ export interface RunProblems {
 	packLoadErrors: PackLoadError[];
 	/** Target-expansion and clone failures: repos that were never audited. */
 	targetErrors: string[];
+	/**
+	 * Packs that reached the model and came back with nothing usable. A pack
+	 * that loaded fine and then failed its audit still audited nothing, and
+	 * "nothing was audited" and "nothing was found" are the two states this
+	 * tool exists to keep apart.
+	 */
+	packRunErrors: PackRunError[];
 	/** Label creation failures, per repo, tolerated during filing. */
 	filingErrors: {repo: string; errors: string[]}[];
 }
@@ -190,6 +198,7 @@ export function hasRunProblems(problems: RunProblems): boolean {
 	return (
 		problems.packLoadErrors.length > 0 ||
 		problems.targetErrors.length > 0 ||
+		problems.packRunErrors.length > 0 ||
 		problems.filingErrors.some(entry => entry.errors.length > 0)
 	);
 }
@@ -235,6 +244,16 @@ export function renderRunProblems(problems: RunProblems): string {
 		lines.push('');
 	}
 
+	if (problems.packRunErrors.length > 0) {
+		lines.push(
+			`**Packs that audited nothing (${problems.packRunErrors.length}):**`,
+		);
+		for (const {repo, pack, reason} of problems.packRunErrors) {
+			lines.push(`- \`${pack}\` on \`${repo}\` — ${reason}`);
+		}
+		lines.push('');
+	}
+
 	for (const {repo, errors} of problems.filingErrors) {
 		if (errors.length === 0) {
 			continue;
@@ -263,4 +282,28 @@ export function renderReport(run: RunOutcome): string {
 	}
 
 	return [header, ...run.repos.map(repoSection)].join('\n\n');
+}
+
+/**
+ * The packs in an outcome that audited nothing. `runFromConfig` collects these
+ * as it goes; a local run only has the finished outcome to read them back from,
+ * and both paths need them for the same reason.
+ */
+export function packRunErrorsOf(run: RunOutcome): PackRunError[] {
+	const errors: PackRunError[] = [];
+	for (const repo of run.repos) {
+		for (const pack of repo.packs) {
+			if (pack.ok) {
+				continue;
+			}
+			errors.push({
+				repo: repo.repo,
+				pack: pack.pack,
+				reason: pack.runError
+					? `run error: ${pack.runError}`
+					: `malformed output after ${pack.attempts} attempt(s) (${pack.errors.length} validation error(s))`,
+			});
+		}
+	}
+	return errors;
 }
