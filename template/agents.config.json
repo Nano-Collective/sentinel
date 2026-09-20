@@ -1,13 +1,25 @@
 {
   "nanocoder": {
+    "disabledTools": [
+      "execute_bash",
+      "fetch_url",
+      "web_search",
+      "agent",
+      "file_op",
+      "write_file",
+      "string_replace",
+      "diff_edit",
+      "git_add",
+      "git_commit",
+      "git_pr",
+      "ask_user"
+    ],
     "providers": [
       {
-        "name": "Example cloud provider — edit or remove",
-        "sdkProvider": "anthropic",
-        "baseUrl": "https://api.example.com/anthropic/v1",
-        "apiKey": "${SENTINEL_MODEL_KEY}",
+        "name": "ollama",
+        "baseUrl": "http://localhost:11434/v1",
         "models": [
-          "example-model"
+          "llama3.1:70b"
         ]
       }
     ]

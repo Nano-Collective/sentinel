@@ -22,7 +22,10 @@ permissions:
 
 jobs:
   audit:
-    runs-on: ubuntu-latest
+    # ollama runs on the machine the job runs on, so this needs a
+    # self-hosted runner with that provider reachable. Switch to ubuntu-latest
+    # only alongside a cloud provider in agents.config.json.
+    runs-on: self-hosted
     steps:
       - name: Check out configuration
         uses: actions/checkout@v4
@@ -32,19 +35,39 @@ jobs:
         with:
           node-version: "22"
 
+      # Sentinel drives Nanocoder; it does not bundle it. Without this step the
+      # run fails on its first model call with "nanocoder is not on PATH".
+      - name: Install Nanocoder
+        run: npm install -g @nanocollective/nanocoder@1
+
       - name: Run Sentinel
         env:
           # A token that can read the audited repos and open issues on them.
           # The default GITHUB_TOKEN only reaches THIS repository, so to audit
           # other repos add a PAT (or GitHub App token) as the SENTINEL_TOKEN
           # secret with repo + issues scope.
+          #
+          # Sentinel does not pass this to Nanocoder — the model subprocess gets
+          # an allowlisted environment, and issues are filed afterwards.
           GH_TOKEN: ${{ secrets.SENTINEL_TOKEN || secrets.GITHUB_TOKEN }}
           GITHUB_TOKEN: ${{ secrets.SENTINEL_TOKEN || secrets.GITHUB_TOKEN }}
-        run: >-
-          npx -y @nanocollective/sentinel@latest run
-          --workspace "$RUNNER_TEMP/sentinel"
-          --output "$GITHUB_STEP_SUMMARY"
-          ${{ github.event.inputs.dry_run == 'true' && '--dry-run' || '' }}
+          # Through the environment rather than interpolated into the script
+          # below. The value is a typed boolean and cannot carry anything but
+          # true or false, but a ${{ }} inside `run:` is the shape of a shell
+          # injection regardless, and this file is the one every install copies.
+          DRY_RUN: ${{ github.event.inputs.dry_run }}
+        run: |
+          set -euo pipefail
+          # Only the literal "true" means dry run. An unticked checkbox arrives
+          # as "false", and a scheduled run sends nothing at all.
+          DRY_RUN_FLAG=""
+          if [ "${DRY_RUN:-}" = "true" ]; then
+            DRY_RUN_FLAG="--dry-run"
+          fi
+          npx -y @nanocollective/sentinel@latest run \
+            --workspace "$RUNNER_TEMP/sentinel" \
+            --output "$GITHUB_STEP_SUMMARY" \
+            $DRY_RUN_FLAG
 
       - name: Commit run record, dashboard and incremental cache
         run: |

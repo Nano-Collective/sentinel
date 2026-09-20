@@ -13,6 +13,7 @@ schedule: "0 6 * * *"
 severity_threshold: medium # low | medium | high | critical
 
 # Which Nanocoder provider and model to use. Local-first by default.
+# The endpoint and API key for this provider live in agents.config.json.
 model:
   provider: ollama
   model: llama3.1:70b

@@ -39,7 +39,12 @@ test('parses and normalises a full config', t => {
 	t.is(config?.schedule, '0 6 * * *');
 	t.is(config?.severityThreshold, 'high');
 	t.is(config?.model.provider, 'ollama');
-	t.is(config?.model.fallback?.endpointSecret, 'SENTINEL_MODEL_KEY');
+	t.is(config?.model.fallback?.provider, 'openai');
+	t.is(config?.model.fallback?.model, 'gpt-x');
+	// `endpoint_secret` is still in FULL_CONFIG above and is deliberately
+	// ignored now: unknown keys never errored, so a config carrying the retired
+	// field keeps loading rather than breaking on upgrade.
+	t.true(result.valid);
 	t.is(config?.issues.label, 'audit');
 	t.is(config?.issues.assignee, 'octocat');
 	t.true(config?.issues.aggregateToConfigRepo);

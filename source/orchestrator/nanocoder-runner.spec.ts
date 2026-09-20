@@ -5,6 +5,7 @@ import {
 	buildNanocoderEnv,
 	parseNanocoderReport,
 	resolveModelId,
+	resolveProvider,
 } from './nanocoder-runner.js';
 
 console.log('\norchestrator/nanocoder-runner.spec.ts');
@@ -37,6 +38,8 @@ test('buildNanocoderArgs mirrors the collective invocation with --json', t => {
 		'the prompt',
 		'--mode',
 		'yolo',
+		'--provider',
+		'ollama',
 		'--model',
 		'llama3.1:70b',
 		'--trust-directory',
@@ -44,9 +47,21 @@ test('buildNanocoderArgs mirrors the collective invocation with --json', t => {
 	]);
 });
 
-test('buildNanocoderArgs uses the fallback model when opted in', t => {
+test('buildNanocoderArgs sends the configured provider', t => {
+	// model.provider was validated and then never passed, so the run used
+	// whichever provider Nanocoder chose for itself.
+	const args = buildNanocoderArgs('p', {provider: 'lmstudio', model: 'qwen'});
+	t.is(args[args.indexOf('--provider') + 1], 'lmstudio');
+});
+
+test('buildNanocoderArgs switches provider and model together on fallback', t => {
 	const args = buildNanocoderArgs('p', MODEL, {useFallback: true});
 	t.is(args[args.indexOf('--model') + 1], 'gpt-x');
+	t.is(args[args.indexOf('--provider') + 1], 'openai');
+});
+
+test('resolveProvider falls back to the primary when none is configured', t => {
+	t.is(resolveProvider({provider: 'ollama', model: 'm'}, true), 'ollama');
 });
 
 test('buildNanocoderEnv sets NANOCODER_CONFIG_DIR when a config dir is given', t => {

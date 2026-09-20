@@ -167,16 +167,6 @@ function validateModel(
 				});
 			} else {
 				model.fallback = {provider: fb.provider, model: fb.model};
-				if (fb.endpoint_secret !== undefined) {
-					if (isNonEmptyString(fb.endpoint_secret)) {
-						model.fallback.endpointSecret = fb.endpoint_secret;
-					} else {
-						errors.push({
-							field: 'model.fallback.endpoint_secret',
-							message: 'endpoint_secret must be a non-empty string',
-						});
-					}
-				}
 			}
 		}
 	}

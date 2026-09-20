@@ -6,6 +6,30 @@
 
 import type {InitOptions} from './types.js';
 
+/**
+ * Providers Nanocoder reaches on the machine it runs on. The distinction drives
+ * the whole scaffold: a local provider needs a runner that has the daemon, and
+ * no API key; a cloud provider needs neither a special runner nor a daemon, but
+ * does need a secret. Getting this wrong is not a warning — it is a workflow
+ * that cannot run.
+ */
+const LOCAL_ENDPOINTS: Record<string, string> = {
+	ollama: 'http://localhost:11434/v1',
+	lmstudio: 'http://localhost:1234/v1',
+	llamacpp: 'http://localhost:8080/v1',
+	mlx: 'http://localhost:8080/v1',
+};
+
+export function isLocalProvider(provider: string): boolean {
+	return provider.trim().toLowerCase() in LOCAL_ENDPOINTS;
+}
+
+/**
+ * The Nanocoder release the scaffolded workflow installs. Pinned to a major
+ * so a scaffolded install picks up fixes without waking up to a new major.
+ */
+const NANOCODER_PACKAGE = '@nanocollective/nanocoder@1';
+
 function targetsBlock(targets: string[]): string {
 	const list = targets.length > 0 ? targets : ['your-org/your-repo'];
 	return list
@@ -32,6 +56,7 @@ schedule: "${options.schedule}"
 severity_threshold: ${options.severityThreshold} # low | medium | high | critical
 
 # Which Nanocoder provider and model to use. Local-first by default.
+# The endpoint and API key for this provider live in agents.config.json.
 model:
   provider: ${options.provider}
   model: ${options.model}
@@ -41,6 +66,41 @@ issues:
   label: ${options.label}
   aggregate_to_config_repo: false
 `;
+}
+
+/**
+ * The runner the audit runs on, chosen by the provider rather than fixed.
+ *
+ * A local provider is a daemon on the machine: `ubuntu-latest` does not have
+ * one, so scaffolding a hosted runner alongside `provider: ollama` produces a
+ * workflow that cannot work. Self-hosted is also the posture the docs call
+ * first-class for local models, since the audited code never leaves hardware
+ * you own.
+ */
+function runnerFor(options: InitOptions): string {
+	if (!isLocalProvider(options.provider)) {
+		return `    runs-on: ubuntu-latest`;
+	}
+	return `    # ${options.provider} runs on the machine the job runs on, so this needs a
+    # self-hosted runner with that provider reachable. Switch to ubuntu-latest
+    # only alongside a cloud provider in agents.config.json.
+    runs-on: self-hosted`;
+}
+
+/**
+ * The model credential, for a cloud provider. The same name goes into
+ * `agents.config.json` as a `${...}` placeholder, which is what actually
+ * reaches Nanocoder — both are generated from `options.endpointSecret` so they
+ * agree by construction.
+ */
+function modelSecretEnv(options: InitOptions): string {
+	if (isLocalProvider(options.provider)) {
+		return '';
+	}
+	return `
+          # The model endpoint key. agents.config.json references this name as
+          # \${${options.endpointSecret}}; add it as an Actions secret.
+          ${options.endpointSecret}: \${{ secrets.${options.endpointSecret} }}`;
 }
 
 /** The scheduled GitHub Actions audit workflow. */
@@ -69,7 +129,7 @@ permissions:
 
 jobs:
   audit:
-    runs-on: ubuntu-latest
+${runnerFor(options)}
     steps:
       - name: Check out configuration
         uses: actions/checkout@v4
@@ -79,19 +139,39 @@ jobs:
         with:
           node-version: "22"
 
+      # Sentinel drives Nanocoder; it does not bundle it. Without this step the
+      # run fails on its first model call with "nanocoder is not on PATH".
+      - name: Install Nanocoder
+        run: npm install -g ${NANOCODER_PACKAGE}
+
       - name: Run Sentinel
         env:
           # A token that can read the audited repos and open issues on them.
           # The default GITHUB_TOKEN only reaches THIS repository, so to audit
           # other repos add a PAT (or GitHub App token) as the SENTINEL_TOKEN
           # secret with repo + issues scope.
+          #
+          # Sentinel does not pass this to Nanocoder — the model subprocess gets
+          # an allowlisted environment, and issues are filed afterwards.
           GH_TOKEN: \${{ secrets.SENTINEL_TOKEN || secrets.GITHUB_TOKEN }}
-          GITHUB_TOKEN: \${{ secrets.SENTINEL_TOKEN || secrets.GITHUB_TOKEN }}
-        run: >-
-          npx -y @nanocollective/sentinel@latest run
-          --workspace "$RUNNER_TEMP/sentinel"
-          --output "$GITHUB_STEP_SUMMARY"
-          \${{ github.event.inputs.dry_run == 'true' && '--dry-run' || '' }}
+          GITHUB_TOKEN: \${{ secrets.SENTINEL_TOKEN || secrets.GITHUB_TOKEN }}${modelSecretEnv(options)}
+          # Through the environment rather than interpolated into the script
+          # below. The value is a typed boolean and cannot carry anything but
+          # true or false, but a \${{ }} inside \`run:\` is the shape of a shell
+          # injection regardless, and this file is the one every install copies.
+          DRY_RUN: \${{ github.event.inputs.dry_run }}
+        run: |
+          set -euo pipefail
+          # Only the literal "true" means dry run. An unticked checkbox arrives
+          # as "false", and a scheduled run sends nothing at all.
+          DRY_RUN_FLAG=""
+          if [ "\${DRY_RUN:-}" = "true" ]; then
+            DRY_RUN_FLAG="--dry-run"
+          fi
+          npx -y @nanocollective/sentinel@latest run \\
+            --workspace "\$RUNNER_TEMP/sentinel" \\
+            --output "\$GITHUB_STEP_SUMMARY" \\
+            \$DRY_RUN_FLAG
 
       - name: Commit run record, dashboard and incremental cache
         run: |
@@ -153,25 +233,70 @@ it with rules that describe the code your organisation actually ships.
 }
 
 /**
+ * The provider entry Nanocoder resolves `model.provider` against.
+ *
+ * `NANOCODER_CONFIG_DIR` **replaces** Nanocoder's provider list rather than
+ * adding to it, so a local provider is not auto-detected once Sentinel points
+ * at a config repo — it has to be written here or `--provider ollama` comes
+ * back as `Provider 'ollama' not found in agents.config.json`. The entry is
+ * named after `sentinel.yaml`'s provider for the same reason: that string is
+ * the lookup key, so the two files have to say the same thing.
+ */
+function providerEntry(options: InitOptions): Record<string, unknown> {
+	const key = options.provider.trim().toLowerCase();
+	const endpoint = LOCAL_ENDPOINTS[key];
+	if (endpoint) {
+		return {
+			name: options.provider,
+			baseUrl: endpoint,
+			models: [options.model],
+		};
+	}
+	return {
+		name: options.provider,
+		baseUrl: 'https://api.example.com/v1 — replace with your endpoint',
+		apiKey: `\${${options.endpointSecret}}`,
+		models: [options.model],
+	};
+}
+
+/**
  * A nanocoder `agents.config.json` template. Sentinel points nanocoder at this
  * file (via NANOCODER_CONFIG_DIR) so the provider/model wiring lives in the
- * config repo — the same shape ContentForest uses. Local providers (Ollama,
- * LM Studio) are usually auto-detected and need no entry here; the example
- * below is a cloud provider to edit or delete.
+ * config repo — the same shape ContentForest uses. The provider entry is
+ * generated from the chosen provider rather than left as an example to edit,
+ * because pointing Nanocoder at a config repo replaces its provider list: a
+ * local provider that is auto-detected on the command line is not found here.
+ *
+ * `disabledTools` is the part not to delete. The audit runs Nanocoder in
+ * auto-approve mode over a repository the operator did not write, with that
+ * repository's files in the prompt. Reading code and reporting on it needs no
+ * shell, no network fetch, no writes and no sub-agents, so an audit that keeps
+ * them is holding capability it never uses. This matches the posture the
+ * collective's own review workflow runs under.
  */
-export function nanocoderConfig(): string {
+export function nanocoderConfig(options: InitOptions): string {
 	return `${JSON.stringify(
 		{
 			nanocoder: {
-				providers: [
-					{
-						name: 'Example cloud provider — edit or remove',
-						sdkProvider: 'anthropic',
-						baseUrl: 'https://api.example.com/anthropic/v1',
-						apiKey: '${SENTINEL_MODEL_KEY}',
-						models: ['example-model'],
-					},
+				disabledTools: [
+					// Executes, reaches the network, or spawns more agents.
+					'execute_bash',
+					'fetch_url',
+					'web_search',
+					'agent',
+					// Writes to the checkout, or pushes from it.
+					'file_op',
+					'write_file',
+					'string_replace',
+					'diff_edit',
+					'git_add',
+					'git_commit',
+					'git_pr',
+					// Blocks forever on a non-interactive run.
+					'ask_user',
 				],
+				providers: [providerEntry(options)],
 			},
 		},
 		null,
@@ -202,9 +327,29 @@ Sentinel ships **no rule packs** — it does nothing until you write one.
 
 \`sentinel.yaml\` names *which* model to use (id + provider). The provider
 *wiring* (endpoint, API key) lives in \`agents.config.json\`, which Sentinel hands
-to Nanocoder — the same shape ContentForest uses. Local providers (Ollama, LM
-Studio) are usually auto-detected and need no entry; for a cloud provider, edit
-the example block and set its key as an environment variable / Actions secret.
+to Nanocoder — the same shape ContentForest uses.
+
+Both files were generated together and **must keep agreeing**:
+\`model.provider\` in \`sentinel.yaml\` is looked up by \`name\` in
+\`agents.config.json\`. Sentinel points Nanocoder at this directory, which
+replaces its provider list, so there is no auto-detected fallback if they
+drift.
+
+${
+	isLocalProvider(options.provider)
+		? `This install is scaffolded for **${options.provider}**, a local provider, so
+the workflow runs on a \`self-hosted\` runner — that is where the daemon lives,
+and the audited code never leaves it. To move to a GitHub-hosted runner, swap
+in a cloud provider in \`agents.config.json\` and change \`runs-on\`.`
+		: `This install is scaffolded for a cloud provider. Add your endpoint key as
+an Actions secret named \`${options.endpointSecret}\` — \`agents.config.json\`
+references it as \`\${${options.endpointSecret}}\` and the workflow passes it
+through under that name.`
+}
+
+The audit runs Nanocoder with writes, shell and network access switched off in
+\`agents.config.json\`. It reads code and reports; keeping those tools would be
+holding capability the audit never uses over code you did not write.
 
 ## Layout
 

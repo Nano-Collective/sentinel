@@ -28,6 +28,21 @@ export function resolveModelId(
 }
 
 /**
+ * Resolve the provider, honouring the fallback flag. Paired with the model id:
+ * falling back means switching both, and a fallback model id sent to the
+ * primary provider is not a model that provider has.
+ */
+export function resolveProvider(
+	model: ModelConfig,
+	useFallback: boolean,
+): string {
+	if (useFallback && model.fallback) {
+		return model.fallback.provider;
+	}
+	return model.provider;
+}
+
+/**
  * Build the Nanocoder argv for a run. Pure and tested; the spawn itself is not.
  */
 export function buildNanocoderArgs(
@@ -35,13 +50,19 @@ export function buildNanocoderArgs(
 	model: ModelConfig,
 	options: RunnerOptions = {},
 ): string[] {
+	const useFallback = options.useFallback ?? false;
 	return [
 		'run',
 		prompt,
 		'--mode',
 		'yolo',
+		// `model.provider` was configured, validated and then never sent, so
+		// every run used whichever provider Nanocoder picked for itself — and a
+		// model id resolved against a provider that was not the configured one.
+		'--provider',
+		resolveProvider(model, useFallback),
 		'--model',
-		resolveModelId(model, options.useFallback ?? false),
+		resolveModelId(model, useFallback),
 		'--trust-directory',
 		// Emit one complete JSON report to stdout instead of a streamed,
 		// last-token-lossy human transcript.
