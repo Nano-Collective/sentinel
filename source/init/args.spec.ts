@@ -64,3 +64,8 @@ test('reports an unknown severity threshold', t => {
 test('reads the target directory', t => {
 	t.is(parseInitArgs(['--dir', 'my-config']).dir, 'my-config');
 });
+
+test('init refuses a provider name the model runner would reject', t => {
+	const parsed = parseInitArgs(['--provider', 'MiniMax Coding']);
+	t.true(parsed.errors.some(error => error.includes('model runner accepts')));
+});
