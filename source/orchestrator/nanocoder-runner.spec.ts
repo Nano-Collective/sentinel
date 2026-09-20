@@ -55,9 +55,39 @@ test('buildNanocoderEnv sets NANOCODER_CONFIG_DIR when a config dir is given', t
 	t.is(env.PATH, '/bin');
 });
 
-test('buildNanocoderEnv returns the base env unchanged without a config dir', t => {
-	const base = {PATH: '/bin'};
-	t.is(buildNanocoderEnv(base), base);
+test('buildNanocoderEnv keeps the essentials without a config dir', t => {
+	t.deepEqual(buildNanocoderEnv({PATH: '/bin'}), {PATH: '/bin'});
+});
+
+test('buildNanocoderEnv withholds the GitHub token from the model subprocess', t => {
+	// The credential the audit holds to file issues, which Nanocoder has no use
+	// for: it reads code and returns findings, and gh-client spends the token in
+	// its own spawn afterwards.
+	const env = buildNanocoderEnv(
+		{
+			PATH: '/bin',
+			GH_TOKEN: 'ghp_secret',
+			GITHUB_TOKEN: 'ghp_secret',
+			ACTIONS_ID_TOKEN_REQUEST_TOKEN: 'oidc',
+			NPM_TOKEN: 'npm_secret',
+		},
+		'/cfg',
+	);
+	t.is(env.GH_TOKEN, undefined);
+	t.is(env.GITHUB_TOKEN, undefined);
+	t.is(env.ACTIONS_ID_TOKEN_REQUEST_TOKEN, undefined);
+	t.is(env.NPM_TOKEN, undefined);
+});
+
+test('buildNanocoderEnv honours the passthrough escape hatch', t => {
+	const env = buildNanocoderEnv({
+		PATH: '/bin',
+		OPENAI_API_KEY: 'sk-abc',
+		GH_TOKEN: 'ghp_secret',
+		SENTINEL_PASSTHROUGH_ENV: 'OPENAI_API_KEY',
+	});
+	t.is(env.OPENAI_API_KEY, 'sk-abc');
+	t.is(env.GH_TOKEN, undefined);
 });
 
 test('parseNanocoderReport returns finalText on a success report', t => {
