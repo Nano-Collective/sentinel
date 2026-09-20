@@ -59,6 +59,14 @@ Two supported shapes:
 
 Sentinel is not a model and does not train one. It uses whichever Nanocoder-configured providers you point it at. If your threat model needs pre-send scrubbing before code reaches a cloud endpoint, compose the workflow with a content-layer tool that fits — that is out of Sentinel's own scope.
 
+## Observability and run history
+
+There is no database. Run history is:
+
+- **Step summary** — the immediate run's result, in the Actions run.
+- **Run record** — a committed record per run, in the config repo. This is the durable store. Alongside the findings it carries what the run cost the model: requests made, wall-clock time, and tokens sent and received. [`sentinel estimate`](../cli/index.md#estimate) reads those back to calibrate its figures.
+- **Dashboard** — a lightweight static site generated into the config repo's GitHub Pages from the committed run records. The read-side surface for trends: per-pack hit rates, findings over time, and aggregate model cost per run.
+
 ## When an audit does not happen
 
 The distinction this tool exists to hold is between *nothing was found* and *nothing was looked at*. They produce the same finding count, so a run says which one happened:
@@ -67,14 +75,6 @@ The distinction this tool exists to hold is between *nothing was found* and *not
 - **An incomplete run exits non-zero**, so the scheduled workflow goes red rather than green. A misconfigured or unreachable model would otherwise file no issues, commit a record showing no findings, and leave a green tick every morning.
 
 A pack that ran and found nothing is not a problem and does not trigger either. That is a clean result, and it is reported as one.
-
-## Observability and run history
-
-There is no database. Run history is:
-
-- **Step summary** — the immediate run's result, in the Actions run.
-- **Run record** — a committed record per run, in the config repo. This is the durable store. Alongside the findings it carries what the run cost the model: requests made, wall-clock time, and tokens sent and received. [`sentinel estimate`](../cli/index.md#estimate) reads those back to calibrate its figures.
-- **Dashboard** — a lightweight static site generated into the config repo's GitHub Pages from the committed run records. The read-side surface for trends: per-pack hit rates, findings over time, and aggregate model cost per run.
 
 ## Triggers in v1
 
