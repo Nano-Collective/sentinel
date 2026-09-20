@@ -20,6 +20,15 @@
   daemon. The runner follows the provider now: a local provider scaffolds
   `self-hosted`, a cloud provider scaffolds `ubuntu-latest`.
 
+  **The scaffolded provider was not the configured one.** `init` wrote
+  `provider: ollama` into `sentinel.yaml` and an example *cloud* provider into
+  `agents.config.json`. Pointing Nanocoder at a config repo replaces its
+  provider list rather than adding to it, so there is no auto-detected local
+  fallback: every run came back `Provider 'ollama' not found in
+  agents.config.json`. The provider entry is generated from the chosen provider
+  now — local ones with their endpoint and no key, cloud ones with the secret
+  placeholder — so the two files name the same provider by construction.
+
   **The model key never reached the model.** The workflow set `GH_TOKEN` and
   nothing else, while `agents.config.json` referenced `${SENTINEL_MODEL_KEY}`
   and the docs described an `endpoint_secret` naming an Actions secret. A cloud

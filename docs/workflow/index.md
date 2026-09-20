@@ -70,6 +70,10 @@ Sentinel *drives* Nanocoder; it does not bundle it, and `npx @nanocollective/sen
 
 If you assembled your workflow by hand and skipped this, the run fails on its first model call with `nanocoder is not on PATH`.
 
+### `agents.config.json` must define your provider
+
+Sentinel points Nanocoder at your config repo via `NANOCODER_CONFIG_DIR`, which **replaces** Nanocoder's provider list rather than adding to it. A local provider that Nanocoder auto-detects when you run it by hand is *not* found here — it has to be in the file. `init` writes the entry for whichever provider you chose, and `model.provider` in `sentinel.yaml` is matched against the `name` in that entry, so keep the two in step if you edit either.
+
 Sentinel is not a model and does not train one. It uses whichever Nanocoder-configured providers you point it at. If your threat model needs pre-send scrubbing before code reaches a cloud endpoint, compose the workflow with a content-layer tool that fits — that is out of Sentinel's own scope.
 
 ## Observability and run history

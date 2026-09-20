@@ -19,9 +19,13 @@ Sentinel ships **no rule packs** — it does nothing until you write one.
 
 `sentinel.yaml` names *which* model to use (id + provider). The provider
 *wiring* (endpoint, API key) lives in `agents.config.json`, which Sentinel hands
-to Nanocoder — the same shape ContentForest uses. Local providers (Ollama, LM
-Studio) are usually auto-detected and need no entry; for a cloud provider, edit
-the example block and set its key as an environment variable / Actions secret.
+to Nanocoder — the same shape ContentForest uses.
+
+Both files were generated together and **must keep agreeing**:
+`model.provider` in `sentinel.yaml` is looked up by `name` in
+`agents.config.json`. Sentinel points Nanocoder at this directory, which
+replaces its provider list, so there is no auto-detected fallback if they
+drift.
 
 This install is scaffolded for **ollama**, a local provider, so
 the workflow runs on a `self-hosted` runner — that is where the daemon lives,

@@ -13,10 +13,15 @@ import type {InitOptions} from './types.js';
  * does need a secret. Getting this wrong is not a warning — it is a workflow
  * that cannot run.
  */
-const LOCAL_PROVIDERS = new Set(['ollama', 'lmstudio', 'llamacpp', 'mlx']);
+const LOCAL_ENDPOINTS: Record<string, string> = {
+	ollama: 'http://localhost:11434/v1',
+	lmstudio: 'http://localhost:1234/v1',
+	llamacpp: 'http://localhost:8080/v1',
+	mlx: 'http://localhost:8080/v1',
+};
 
 export function isLocalProvider(provider: string): boolean {
-	return LOCAL_PROVIDERS.has(provider.trim().toLowerCase());
+	return provider.trim().toLowerCase() in LOCAL_ENDPOINTS;
 }
 
 /**
@@ -216,11 +221,40 @@ it with rules that describe the code your organisation actually ships.
 }
 
 /**
+ * The provider entry Nanocoder resolves `model.provider` against.
+ *
+ * `NANOCODER_CONFIG_DIR` **replaces** Nanocoder's provider list rather than
+ * adding to it, so a local provider is not auto-detected once Sentinel points
+ * at a config repo — it has to be written here or `--provider ollama` comes
+ * back as `Provider 'ollama' not found in agents.config.json`. The entry is
+ * named after `sentinel.yaml`'s provider for the same reason: that string is
+ * the lookup key, so the two files have to say the same thing.
+ */
+function providerEntry(options: InitOptions): Record<string, unknown> {
+	const key = options.provider.trim().toLowerCase();
+	const endpoint = LOCAL_ENDPOINTS[key];
+	if (endpoint) {
+		return {
+			name: options.provider,
+			baseUrl: endpoint,
+			models: [options.model],
+		};
+	}
+	return {
+		name: options.provider,
+		baseUrl: 'https://api.example.com/v1 — replace with your endpoint',
+		apiKey: `\${${options.endpointSecret}}`,
+		models: [options.model],
+	};
+}
+
+/**
  * A nanocoder `agents.config.json` template. Sentinel points nanocoder at this
  * file (via NANOCODER_CONFIG_DIR) so the provider/model wiring lives in the
- * config repo — the same shape ContentForest uses. Local providers (Ollama,
- * LM Studio) are usually auto-detected and need no entry here; the example
- * below is a cloud provider to edit or delete.
+ * config repo — the same shape ContentForest uses. The provider entry is
+ * generated from the chosen provider rather than left as an example to edit,
+ * because pointing Nanocoder at a config repo replaces its provider list: a
+ * local provider that is auto-detected on the command line is not found here.
  *
  * `disabledTools` is the part not to delete. The audit runs Nanocoder in
  * auto-approve mode over a repository the operator did not write, with that
@@ -250,15 +284,7 @@ export function nanocoderConfig(options: InitOptions): string {
 					// Blocks forever on a non-interactive run.
 					'ask_user',
 				],
-				providers: [
-					{
-						name: 'Example cloud provider — edit or remove',
-						sdkProvider: 'anthropic',
-						baseUrl: 'https://api.example.com/anthropic/v1',
-						apiKey: `\${${options.endpointSecret}}`,
-						models: ['example-model'],
-					},
-				],
+				providers: [providerEntry(options)],
 			},
 		},
 		null,
@@ -289,9 +315,13 @@ Sentinel ships **no rule packs** — it does nothing until you write one.
 
 \`sentinel.yaml\` names *which* model to use (id + provider). The provider
 *wiring* (endpoint, API key) lives in \`agents.config.json\`, which Sentinel hands
-to Nanocoder — the same shape ContentForest uses. Local providers (Ollama, LM
-Studio) are usually auto-detected and need no entry; for a cloud provider, edit
-the example block and set its key as an environment variable / Actions secret.
+to Nanocoder — the same shape ContentForest uses.
+
+Both files were generated together and **must keep agreeing**:
+\`model.provider\` in \`sentinel.yaml\` is looked up by \`name\` in
+\`agents.config.json\`. Sentinel points Nanocoder at this directory, which
+replaces its provider list, so there is no auto-detected fallback if they
+drift.
 
 ${
 	isLocalProvider(options.provider)

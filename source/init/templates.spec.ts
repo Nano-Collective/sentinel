@@ -80,7 +80,7 @@ test('the workflow wires the token, workspace, and step summary', t => {
 test('the nanocoder config is valid JSON with a providers block', t => {
 	const parsed = JSON.parse(nanocoderConfig(options()));
 	t.true(Array.isArray(parsed.nanocoder.providers));
-	t.is(parsed.nanocoder.providers[0]?.apiKey, '${SENTINEL_MODEL_KEY}');
+	t.is(parsed.nanocoder.providers[0]?.name, DEFAULT_INIT_OPTIONS.provider);
 });
 
 /**
@@ -193,4 +193,37 @@ test('the readme points at the authoring docs and the schedule', t => {
 	t.true(readme.includes('rule-packs/authoring'));
 	t.true(readme.includes('0 6 * * *'));
 	t.true(readme.includes('ships **no rule packs**'));
+});
+
+test('agents.config.json defines the provider sentinel.yaml names', t => {
+	// NANOCODER_CONFIG_DIR replaces Nanocoder's provider list rather than adding
+	// to it, so a local provider is not auto-detected once Sentinel points at a
+	// config repo. Scaffolding `provider: ollama` beside a config that only
+	// listed an example cloud provider produced
+	// "Provider 'ollama' not found in agents.config.json" on every run.
+	for (const provider of ['ollama', 'lmstudio', 'openai']) {
+		const chosen = options({provider, model: 'some-model'});
+		const named = parseConfig(sentinelYaml(chosen)).config?.model.provider;
+		const entries = JSON.parse(nanocoderConfig(chosen)).nanocoder.providers as {
+			name: string;
+			models: string[];
+		}[];
+		t.is(entries.length, 1);
+		t.is(entries[0]?.name, named ?? '', `${provider} is not configured`);
+		t.deepEqual(entries[0]?.models, ['some-model']);
+	}
+});
+
+test('a local provider is scaffolded with its endpoint and no key', t => {
+	const entry = JSON.parse(nanocoderConfig(options({provider: 'ollama'})))
+		.nanocoder.providers[0];
+	t.is(entry.baseUrl, 'http://localhost:11434/v1');
+	t.is(entry.apiKey, undefined);
+});
+
+test('a cloud provider is scaffolded with the endpoint secret placeholder', t => {
+	const entry = JSON.parse(
+		nanocoderConfig(options({provider: 'openai', endpointSecret: 'ACME_KEY'})),
+	).nanocoder.providers[0];
+	t.is(entry.apiKey, '${ACME_KEY}');
 });
