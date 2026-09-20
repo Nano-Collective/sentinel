@@ -1,0 +1,40 @@
+# Sentinel auditing Sentinel.
+#
+# This is a real install, not a fixture. It uses the published package the same
+# way any other config repo does, which is the point: the scaffolded install
+# path went three releases without anyone running it end to end, and four
+# separate things were wrong with it. A tool that audits repositories on a
+# schedule should be on that schedule itself.
+#
+# Docs: https://docs.nanocollective.org/sentinel/docs/configuration
+
+targets:
+  - repo: Nano-Collective/sentinel
+    rule_packs: [silent-failure, untrusted-content]
+    # Off deliberately. This repo is small enough that a full read costs little,
+    # and incremental scanning is one of the things being audited — a cache bug
+    # that narrowed the scope would narrow the audit that would have caught it.
+    incremental: false
+
+# 07:00 UTC daily, an hour after the documented default, so a scheduled run and
+# the badge cron are not competing for the same minute.
+schedule: "0 7 * * *"
+
+# `high` rather than `medium` while this is calibrating. The docs are honest
+# that a first live run files everything at once; starting at the filing floor
+# that matters keeps the first morning readable. Lower it once the packs have
+# earned it.
+severity_threshold: high
+
+# Matches .sentinel/agents.config.json, where the endpoint and key live.
+# `provider` is looked up by `name` there — the two have to agree.
+model:
+  provider: "MiniMax Coding"
+  model: minimax-m3
+
+issues:
+  label: sentinel
+  assignee: null
+  # Findings are about this repo and land on this repo. Same thing here, but
+  # stated rather than defaulted.
+  aggregate_to_config_repo: false

@@ -1,0 +1,104 @@
+name: Sentinel
+
+# Sentinel auditing Sentinel.
+#
+# This is a real install of the published package, not a test harness. It is
+# deliberately the same shape `sentinel init` scaffolds — install Nanocoder,
+# point NANOCODER_CONFIG_DIR at a config directory that defines the provider,
+# pass only the model key to the subprocess — so that if the scaffolded shape
+# breaks, this breaks too. The scaffolded install went three releases without
+# anyone running it end to end; a tool that audits repositories on a schedule
+# should be on that schedule itself.
+#
+# Everything it owns lives under .sentinel/ so the package repo's root stays
+# the package's.
+
+on:
+  schedule:
+    - cron: "0 7 * * *"
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Run the full audit but file no issues"
+        type: boolean
+        default: false
+
+# One audit at a time; never cancel an in-progress run.
+concurrency:
+  group: sentinel
+  cancel-in-progress: false
+
+permissions:
+  # Commits the run record, dashboard and cache back to this repo.
+  contents: write
+  # Files findings as issues on this repo.
+  issues: write
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out configuration
+        # pin: actions/checkout@v4.4.0
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+
+      - name: Set up Node.js
+        # pin: actions/setup-node@v4.4.0
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: "22"
+
+      # Sentinel drives Nanocoder; it does not bundle it. Without this step the
+      # run fails on its first model call with "nanocoder is not on PATH".
+      - name: Install Nanocoder
+        run: npm install -g @nanocollective/nanocoder@1
+
+      - name: Run Sentinel
+        env:
+          # Only this repository is audited, so the default token reaches
+          # everything the run needs. A PAT would be over-scoped here.
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # The model key .sentinel/agents.config.json references. Set as an
+          # organisation secret; nc-review uses the same one.
+          MINIMAX_API_KEY: ${{ secrets.MINIMAX_API_KEY }}
+          # Through the environment rather than interpolated into the script.
+          # The value is a typed boolean so it cannot carry anything but true
+          # or false, but a `${{ }}` inside `run:` is the shape of a shell
+          # injection whether or not this one is reachable, and a repository
+          # that audits others for exactly that should not ship it.
+          DRY_RUN: ${{ github.event.inputs.dry_run }}
+        run: |
+          set -euo pipefail
+          # Only the literal string "true" means dry run. A checkbox left
+          # unticked arrives as "false", and a scheduled run sends nothing at
+          # all — neither must be mistaken for the flag being set.
+          DRY_RUN_FLAG=""
+          if [ "${DRY_RUN:-}" = "true" ]; then
+            DRY_RUN_FLAG="--dry-run"
+          fi
+          npx -y @nanocollective/sentinel@latest run \
+            --config .sentinel/sentinel.yaml \
+            --config-dir .sentinel \
+            --workspace "$RUNNER_TEMP/sentinel" \
+            --records-dir .sentinel/runs \
+            --dashboard-dir .sentinel/dashboard \
+            --cache-file .sentinel/cache.json \
+            --output "$GITHUB_STEP_SUMMARY" \
+            $DRY_RUN_FLAG
+
+      - name: Commit run record, dashboard and incremental cache
+        # Runs even when the audit reported problems, so the record of an
+        # incomplete run is still committed. `sentinel run` exits non-zero when
+        # the audit did not complete, and the evidence of that is exactly what
+        # should survive.
+        if: always()
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add .sentinel/runs .sentinel/dashboard || true
+          git add .sentinel/cache.json || true
+          if ! git diff --cached --quiet; then
+            git commit -m "chore: sentinel run record [skip ci]"
+            git push
+          fi
