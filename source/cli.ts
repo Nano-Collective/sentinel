@@ -41,6 +41,7 @@ import {renderPreview} from './run/preview.js';
 import {ghRepoLister} from './run/repo-lister.js';
 import {
 	hasRunProblems,
+	packRunErrorsOf,
 	type RunProblems,
 	renderFilingLine,
 	renderReport,
@@ -272,8 +273,28 @@ async function runRun(argv: string[]): Promise<number> {
 			// Absolute — nanocoder runs with cwd set to the audited repo.
 			{configDir: localConfigDir ? resolve(localConfigDir) : undefined},
 		);
-		writeReport(renderReport(outcome), output);
-		return 0;
+		// Local mode reports the same way the scheduled path does. A pack that
+		// never reached the model renders "Run error" in its own section, but the
+		// report still opens with "0 finding(s)" — and a calibration run that
+		// looks clean because the model was unreachable is how a pack gets
+		// believed to be working.
+		const localProblems: RunProblems = {
+			packLoadErrors: [],
+			targetErrors: [],
+			packRunErrors: packRunErrorsOf(outcome),
+			filingErrors: [],
+		};
+		const localSection = renderRunProblems(localProblems);
+		writeReport(
+			localSection
+				? `${renderReport(outcome)}\n\n${localSection}\n`
+				: renderReport(outcome),
+			output,
+		);
+		for (const {repo: repoName, pack, reason} of localProblems.packRunErrors) {
+			console.error(`pack: ${pack} audited nothing on ${repoName} — ${reason}`);
+		}
+		return localProblems.packRunErrors.length > 0 ? 1 : 0;
 	}
 
 	// Config-driven mode.
@@ -348,6 +369,7 @@ async function runRun(argv: string[]): Promise<number> {
 	const problems: RunProblems = {
 		packLoadErrors: report.packLoadErrors,
 		targetErrors: report.targetErrors,
+		packRunErrors: report.packRunErrors,
 		filingErrors: report.reconciled.map(({repo: repoName, result}) => ({
 			repo: repoName,
 			errors: result.errors,
@@ -371,6 +393,10 @@ async function runRun(argv: string[]): Promise<number> {
 
 	for (const error of report.targetErrors) {
 		console.error(`target: ${error}`);
+	}
+
+	for (const {repo: repoName, pack, reason} of report.packRunErrors) {
+		console.error(`pack: ${pack} audited nothing on ${repoName} — ${reason}`);
 	}
 
 	if (report.filed) {
@@ -411,10 +437,17 @@ async function runRun(argv: string[]): Promise<number> {
 				`${report.packLoadErrors.length} rule pack(s) failed to load`,
 			report.targetErrors.length > 0 &&
 				`${report.targetErrors.length} target(s) could not be audited`,
+			report.packRunErrors.length > 0 &&
+				`${report.packRunErrors.length} pack(s) audited nothing`,
 		].filter((part): part is string => typeof part === 'string');
 		console.error(
 			`\n⚠️  This audit is incomplete${counts.length > 0 ? `: ${counts.join(', ')}` : ''}. See the Problems section of the report.`,
 		);
+		// Non-zero so the scheduled workflow goes red. Saying "this audit is
+		// incomplete" and then exiting 0 leaves a green run and a committed
+		// record that reads as a clean estate — which is the one conclusion an
+		// audit that did not happen must never support.
+		return 1;
 	}
 	return 0;
 }

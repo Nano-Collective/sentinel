@@ -4,6 +4,7 @@ import type {Finding} from '../findings/types.js';
 import {
 	countFindings,
 	hasRunProblems,
+	packRunErrorsOf,
 	type RunProblems,
 	renderFilingLine,
 	renderReport,
@@ -212,6 +213,7 @@ test('handles a run with no repositories', t => {
 const NO_PROBLEMS: RunProblems = {
 	packLoadErrors: [],
 	targetErrors: [],
+	packRunErrors: [],
 	filingErrors: [],
 };
 
@@ -283,6 +285,7 @@ test('every problem channel appears in one section', t => {
 	const markdown = renderRunProblems({
 		packLoadErrors: [{file: 'broken.md', errors: []}],
 		targetErrors: ['no access'],
+		packRunErrors: [],
 		filingErrors: [{repo: 'a', errors: ['label failed']}],
 	});
 	t.true(markdown.includes('broken.md'));
@@ -406,4 +409,63 @@ test('a repo with no full-pass notes gets no note', t => {
 		],
 	};
 	t.false(renderReport(run).includes('re-read every file'));
+});
+
+test('a pack that audited nothing is a run problem, not a clean run', t => {
+	// The bug this guards: a model that could not be reached produced "0
+	// finding(s)" with no run-level problem, so the workflow went green and the
+	// committed record read as a clean estate.
+	const problems: RunProblems = {
+		packLoadErrors: [],
+		targetErrors: [],
+		packRunErrors: [
+			{repo: 'org/a', pack: 'sec', reason: "run error: Provider 'x' not found"},
+		],
+		filingErrors: [],
+	};
+	t.true(hasRunProblems(problems));
+	const section = renderRunProblems(problems);
+	t.true(section.includes('Packs that audited nothing (1)'));
+	t.true(section.includes('`sec` on `org/a`'));
+	t.true(section.includes("Provider 'x' not found"));
+});
+
+test('packRunErrorsOf reads failed packs back off a finished outcome', t => {
+	const errors = packRunErrorsOf({
+		repos: [
+			{
+				repo: 'org/a',
+				missingPacks: [],
+				unresolvedPacks: [],
+				packs: [
+					{
+						pack: 'clean',
+						version: '1.0.0',
+						findings: [],
+						severityOverrides: [],
+						attempts: 1,
+						ok: true,
+						errors: [],
+						usage: {durationMs: 0, promptTokens: 0, outputTokens: 0},
+					},
+					{
+						pack: 'broken',
+						version: '1.0.0',
+						findings: [],
+						severityOverrides: [],
+						attempts: 2,
+						ok: false,
+						errors: [],
+						runError: 'nanocoder timed out',
+						usage: {durationMs: 0, promptTokens: 0, outputTokens: 0},
+					},
+				],
+			},
+		],
+	});
+	// A pack that looked and found nothing is not a problem; one that never
+	// looked is.
+	t.is(errors.length, 1);
+	t.is(errors[0]?.pack, 'broken');
+	t.is(errors[0]?.reason, 'run error: nanocoder timed out');
 });

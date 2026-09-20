@@ -64,6 +64,7 @@ function report(overrides: Partial<RunReport> = {}): RunReport {
 		previews: [],
 		packLoadErrors: [],
 		targetErrors: [],
+		packRunErrors: [],
 		filed: false,
 		...overrides,
 	};

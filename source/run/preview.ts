@@ -160,3 +160,14 @@ export function renderPreview(previews: PreviewEntry[]): string {
 
 	return parts.join('\n\n');
 }
+
+/**
+ * A pack that audited nothing, tied to the repository it was running against.
+ * The repo matters: "pack X failed" is a different operational fact from "pack
+ * X failed on one of forty repositories".
+ */
+export interface PackRunError {
+	repo: string;
+	pack: string;
+	reason: string;
+}

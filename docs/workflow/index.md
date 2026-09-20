@@ -106,6 +106,15 @@ There is no database. Run history is:
 - **Run record** — a committed record per run, in the config repo. This is the durable store. Alongside the findings it carries what the run cost the model: requests made, wall-clock time, and tokens sent and received. [`sentinel estimate`](../cli/index.md#estimate) reads those back to calibrate its figures.
 - **Dashboard** — a lightweight static site generated into the config repo's GitHub Pages from the committed run records. The read-side surface for trends: per-pack hit rates, findings over time, and aggregate model cost per run.
 
+## When an audit does not happen
+
+The distinction this tool exists to hold is between *nothing was found* and *nothing was looked at*. They produce the same finding count, so a run says which one happened:
+
+- **Every failure reaches the report.** A rule pack that failed to load, a target that could not be checked out, and a pack whose model call failed all appear in a **⚠️ Problems** section appended to whichever report the run produced — live or dry-run. The report is the artefact that gets committed and attached to the step summary, so a partial audit cannot be read later as a complete one.
+- **An incomplete run exits non-zero**, so the scheduled workflow goes red rather than green. A misconfigured or unreachable model would otherwise file no issues, commit a record showing no findings, and leave a green tick every morning.
+
+A pack that ran and found nothing is not a problem and does not trigger either. That is a clean result, and it is reported as one.
+
 ## Triggers in v1
 
 Scheduled runs are the only trigger in v1. **PR-triggered runs are phase 2** — the check-run, comment, and race-condition surface is deferred. The v1 finding output is deliberately shaped so a future PR-triggered surface can consume it without a data-model change.
