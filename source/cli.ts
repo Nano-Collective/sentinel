@@ -28,6 +28,7 @@ import {gitProbe} from './incremental/git.js';
 import {CacheSession} from './incremental/session.js';
 import {parseInitArgs} from './init/args.js';
 import {scaffold} from './init/scaffold.js';
+import {isLocalProvider} from './init/templates.js';
 import type {InitOptions} from './init/types.js';
 import {ghIssueClient} from './issues/gh-client.js';
 import {renderDashboard} from './observe/dashboard.js';
@@ -69,6 +70,8 @@ Options:
   --targets <a/b,c/d>          Comma-separated owner/repo targets
   --severity-threshold <s>     low | medium | high | critical (default medium)
   --label <name>               Issue label (default "sentinel")
+  --endpoint-secret <NAME>     Actions secret holding the model key
+                               (default SENTINEL_MODEL_KEY; cloud providers)
   --dir <path>                 Directory to scaffold into (default ".")
   --force                      Overwrite existing files
   --yes                        Non-interactive; accept defaults`;
@@ -82,6 +85,15 @@ async function promptMissing(options: InitOptions): Promise<InitOptions> {
 		};
 		const provider = await ask('Model provider', options.provider);
 		const model = await ask('Model', options.model);
+		// Only a cloud provider needs a key, and only then is there a secret to
+		// name. Asking a local install for one would be asking about something
+		// the scaffold then has no use for.
+		const endpointSecret = isLocalProvider(provider)
+			? options.endpointSecret
+			: await ask(
+					'Actions secret holding the model endpoint key',
+					options.endpointSecret,
+				);
 		const schedule = await ask('Schedule (cron, UTC)', options.schedule);
 		const label = await ask('Issue label', options.label);
 		const targetsRaw = await ask(
@@ -92,7 +104,15 @@ async function promptMissing(options: InitOptions): Promise<InitOptions> {
 			.split(',')
 			.map(target => target.trim())
 			.filter(target => target.length > 0);
-		return {...options, provider, model, schedule, label, targets};
+		return {
+			...options,
+			provider,
+			model,
+			endpointSecret,
+			schedule,
+			label,
+			targets,
+		};
 	} finally {
 		rl.close();
 	}

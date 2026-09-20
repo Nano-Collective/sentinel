@@ -26,12 +26,18 @@ export interface Target {
 	incremental?: boolean;
 }
 
-/** An optional cloud fallback, used only when the primary model struggles. */
+/**
+ * An optional cloud fallback, used only when the primary model struggles.
+ *
+ * Deliberately no key or endpoint here. `sentinel.yaml` names *which* model to
+ * use; the wiring that reaches it — endpoint, API key — lives in
+ * `agents.config.json`, which is the file Nanocoder actually reads. A second
+ * place to name the credential is a second thing to keep in step, and the one
+ * that used to be here (`endpoint_secret`) was never read by anything.
+ */
 export interface ModelFallback {
 	provider: string;
 	model: string;
-	/** Name of the Actions secret holding the endpoint key. */
-	endpointSecret?: string;
 }
 
 /** Which Nanocoder provider and model to run. Local-first by default. */

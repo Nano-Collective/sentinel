@@ -23,6 +23,15 @@ to Nanocoder — the same shape ContentForest uses. Local providers (Ollama, LM
 Studio) are usually auto-detected and need no entry; for a cloud provider, edit
 the example block and set its key as an environment variable / Actions secret.
 
+This install is scaffolded for **ollama**, a local provider, so
+the workflow runs on a `self-hosted` runner — that is where the daemon lives,
+and the audited code never leaves it. To move to a GitHub-hosted runner, swap
+in a cloud provider in `agents.config.json` and change `runs-on`.
+
+The audit runs Nanocoder with writes, shell and network access switched off in
+`agents.config.json`. It reads code and reports; keeping those tools would be
+holding capability the audit never uses over code you did not write.
+
 ## Layout
 
 - `sentinel.yaml` — targets, schedule, model, and issue routing.

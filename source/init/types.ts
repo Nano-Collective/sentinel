@@ -20,6 +20,14 @@ export interface InitOptions {
 	severityThreshold: Severity;
 	/** Label applied to filed issues. */
 	label: string;
+	/**
+	 * Name of the Actions secret holding the model endpoint key, for a cloud
+	 * provider. One name generates two things that have to agree — the
+	 * workflow's `env:` entry and the `${...}` placeholder in
+	 * `agents.config.json` — so they cannot drift apart. Unused by a local
+	 * provider, which needs no key.
+	 */
+	endpointSecret: string;
 }
 
 /** Defaults applied to anything the user does not supply. */
@@ -30,6 +38,7 @@ export const DEFAULT_INIT_OPTIONS: InitOptions = {
 	targets: [],
 	severityThreshold: 'medium',
 	label: 'sentinel',
+	endpointSecret: 'SENTINEL_MODEL_KEY',
 };
 
 /** One file the scaffolder will write, as a repo-relative path and content. */

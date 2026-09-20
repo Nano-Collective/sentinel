@@ -71,6 +71,10 @@ export function parseInitArgs(argv: string[]): ParsedInitArgs {
 	if (label) {
 		options.label = label;
 	}
+	const endpointSecret = asString(flags.get('endpoint-secret'));
+	if (endpointSecret) {
+		options.endpointSecret = endpointSecret;
+	}
 
 	const targets = asString(flags.get('targets'));
 	if (targets) {

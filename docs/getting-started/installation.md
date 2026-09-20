@@ -12,8 +12,12 @@ Sentinel installs into a dedicated configuration repository inside your GitHub o
 
 - A GitHub organisation (or user account) with the repositories you want to audit.
 - Permission to create a repository in that organisation and to enable GitHub Actions.
-- For the default hosted-runner path: a model provider endpoint and a token, stored as an Actions secret. For the local-first path: a self-hosted runner with a Nanocoder-compatible provider (Ollama, LM Studio, llama.cpp, MLX).
-- To run the scaffolder or a local audit: [Node.js](https://nodejs.org/) 22+.
+- A way for the audit to reach a model, in one of two shapes:
+  - **Local-first (the scaffolded default)** — a [self-hosted runner](https://docs.github.com/actions/hosting-your-own-runners) with a Nanocoder-compatible provider on it (Ollama, LM Studio, llama.cpp, MLX) and your model pulled. The audited code never leaves it.
+  - **Hosted runner + cloud model** — a model provider endpoint and its key, stored as an Actions secret. No runner to stand up; the audited code goes to that endpoint.
+
+  `init` scaffolds the workflow to match whichever provider you choose, so the runner and the provider cannot disagree.
+- To run the scaffolder or a local audit: [Node.js](https://nodejs.org/) 22+. A **local** audit also needs Nanocoder on your `PATH` (`npm install -g @nanocollective/nanocoder`); the scheduled workflow installs it on the runner itself.
 
 You do **not** need to install a GitHub App, authenticate against any Nano Collective service, or exchange a token with anyone. The install runs entirely inside your organisation.
 

@@ -31,9 +31,8 @@ model:
   provider: ollama                 # ollama | lmstudio | llamacpp | mlx | <cloud provider>
   model: llama3.1:70b
   fallback:                        # optional: used only when the primary demonstrably struggles
-    provider: <cloud-provider>
+    provider: <cloud-provider>     # must name a provider in agents.config.json
     model: <model-id>
-    endpoint_secret: SENTINEL_MODEL_KEY   # name of the Actions secret holding the key
 
 # Where findings go.
 issues:
@@ -98,7 +97,23 @@ The floor for filing issues. Findings below it still run and appear in the run s
 
 ### `model`
 
-Which Nanocoder provider to use. **Local-first is the intended posture**: `ollama`, `lmstudio`, `llamacpp`, and `mlx` keep the audited code on hardware you own when run on a self-hosted runner. A cloud provider under `fallback` is used only when the primary struggles, and its use is explicit configuration — on a GitHub-hosted runner calling a cloud endpoint, the audited code leaves the runner and goes to that endpoint. Store any key as an Actions secret referenced by name; never inline it. See [Workflow → runner and model posture](../workflow/index.md#runner-and-model-posture).
+Which Nanocoder provider to use. **Local-first is the intended posture**: `ollama`, `lmstudio`, `llamacpp`, and `mlx` keep the audited code on hardware you own when run on a self-hosted runner. A cloud provider under `fallback` is used only when the primary struggles, and its use is explicit configuration — on a GitHub-hosted runner calling a cloud endpoint, the audited code leaves the runner and goes to that endpoint. See [Workflow → runner and model posture](../workflow/index.md#runner-and-model-posture).
+
+| Key | Description |
+| --- | --- |
+| `provider` | The provider to run against. Passed to Nanocoder as `--provider`, so it must name one Nanocoder knows — a built-in, or an entry in your `agents.config.json`. |
+| `model` | The model id, which must be one that provider offers. |
+| `fallback` | Optional `provider` + `model` used only when the primary struggles. Switching to it switches both. |
+
+**Where the key lives.** `sentinel.yaml` names *which* model to run; the wiring that reaches it — endpoint, API key — lives in `agents.config.json`, which is the file Nanocoder reads. Reference the key there by name (`"apiKey": "${SENTINEL_MODEL_KEY}"`) and set that name as an Actions secret; never inline it.
+
+That placeholder is also what lets the key through to the model at all — the subprocess environment is an allowlist, and `${...}` references in `agents.config.json` are what populate it. See [What the model subprocess can see](../workflow/index.md#what-the-model-subprocess-can-see).
+
+> `model.fallback.endpoint_secret` was removed before `1.0.0`. It named the
+> Actions secret, but nothing read it, and `agents.config.json` already names
+> the same thing in the place that is actually consulted. A config still
+> carrying the key keeps loading — unknown fields are ignored — it simply has
+> no effect, as before.
 
 ### `issues`
 

@@ -22,7 +22,10 @@ permissions:
 
 jobs:
   audit:
-    runs-on: ubuntu-latest
+    # ollama runs on the machine the job runs on, so this needs a
+    # self-hosted runner with that provider reachable. Switch to ubuntu-latest
+    # only alongside a cloud provider in agents.config.json.
+    runs-on: self-hosted
     steps:
       - name: Check out configuration
         uses: actions/checkout@v4
@@ -32,12 +35,20 @@ jobs:
         with:
           node-version: "22"
 
+      # Sentinel drives Nanocoder; it does not bundle it. Without this step the
+      # run fails on its first model call with "nanocoder is not on PATH".
+      - name: Install Nanocoder
+        run: npm install -g @nanocollective/nanocoder@1
+
       - name: Run Sentinel
         env:
           # A token that can read the audited repos and open issues on them.
           # The default GITHUB_TOKEN only reaches THIS repository, so to audit
           # other repos add a PAT (or GitHub App token) as the SENTINEL_TOKEN
           # secret with repo + issues scope.
+          #
+          # Sentinel does not pass this to Nanocoder — the model subprocess gets
+          # an allowlisted environment, and issues are filed afterwards.
           GH_TOKEN: ${{ secrets.SENTINEL_TOKEN || secrets.GITHUB_TOKEN }}
           GITHUB_TOKEN: ${{ secrets.SENTINEL_TOKEN || secrets.GITHUB_TOKEN }}
         run: >-

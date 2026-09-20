@@ -52,10 +52,23 @@ The preview is written to the Actions step summary and saved as a run artefact. 
 
 ## Runner and model posture
 
-Two supported shapes:
+Two supported shapes, and **`init` scaffolds whichever one your provider implies** — the runner follows the provider rather than being fixed, because the two have to agree or the workflow cannot run at all:
 
-- **GitHub-hosted runner (`ubuntu-latest`) + configured cloud model endpoint** — the out-of-the-box default for installs that do not stand up their own runner. Be honest about what this means: the audited code leaves the runner and is sent to the configured endpoint. That path is explicit configuration, never hidden behaviour. The endpoint is operator-chosen; Sentinel ships no model recommendation.
-- **Self-hosted runner + local Nanocoder provider** — the fully-supported, first-class local-first path. Every byte of audited code stays on hardware you own. This is the intended posture for sensitive code, and the one the project optimises for.
+- **Self-hosted runner + local Nanocoder provider** (`ollama`, `lmstudio`, `llamacpp`, `mlx`) — the fully-supported, first-class local-first path, and what you get by default. Every byte of audited code stays on hardware you own. A local provider is a daemon on the machine the job runs on, so this needs a runner that has it; `ubuntu-latest` does not.
+- **GitHub-hosted runner (`ubuntu-latest`) + configured cloud model endpoint** — for installs that do not stand up their own runner. Scaffolded when you choose a non-local provider, along with the `env:` entry carrying your endpoint key. Be honest about what this means: the audited code leaves the runner and is sent to the configured endpoint. That path is explicit configuration, never hidden behaviour. The endpoint is operator-chosen; Sentinel ships no model recommendation.
+
+Switching between them is two edits — `runs-on` in the workflow, and the provider in `agents.config.json` — plus the key, if you are moving to a cloud provider.
+
+### Nanocoder is installed by the workflow
+
+Sentinel *drives* Nanocoder; it does not bundle it, and `npx @nanocollective/sentinel` does not bring it along. The scaffolded workflow therefore installs it explicitly:
+
+```yaml
+- name: Install Nanocoder
+  run: npm install -g @nanocollective/nanocoder@1
+```
+
+If you assembled your workflow by hand and skipped this, the run fails on its first model call with `nanocoder is not on PATH`.
 
 Sentinel is not a model and does not train one. It uses whichever Nanocoder-configured providers you point it at. If your threat model needs pre-send scrubbing before code reaches a cloud endpoint, compose the workflow with a content-layer tool that fits — that is out of Sentinel's own scope.
 

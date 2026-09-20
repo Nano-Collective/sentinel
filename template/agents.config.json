@@ -1,5 +1,19 @@
 {
   "nanocoder": {
+    "disabledTools": [
+      "execute_bash",
+      "fetch_url",
+      "web_search",
+      "agent",
+      "file_op",
+      "write_file",
+      "string_replace",
+      "diff_edit",
+      "git_add",
+      "git_commit",
+      "git_pr",
+      "ask_user"
+    ],
     "providers": [
       {
         "name": "Example cloud provider — edit or remove",

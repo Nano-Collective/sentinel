@@ -6,6 +6,25 @@
 
 import type {InitOptions} from './types.js';
 
+/**
+ * Providers Nanocoder reaches on the machine it runs on. The distinction drives
+ * the whole scaffold: a local provider needs a runner that has the daemon, and
+ * no API key; a cloud provider needs neither a special runner nor a daemon, but
+ * does need a secret. Getting this wrong is not a warning — it is a workflow
+ * that cannot run.
+ */
+const LOCAL_PROVIDERS = new Set(['ollama', 'lmstudio', 'llamacpp', 'mlx']);
+
+export function isLocalProvider(provider: string): boolean {
+	return LOCAL_PROVIDERS.has(provider.trim().toLowerCase());
+}
+
+/**
+ * The Nanocoder release the scaffolded workflow installs. Pinned to a major
+ * so a scaffolded install picks up fixes without waking up to a new major.
+ */
+const NANOCODER_PACKAGE = '@nanocollective/nanocoder@1';
+
 function targetsBlock(targets: string[]): string {
 	const list = targets.length > 0 ? targets : ['your-org/your-repo'];
 	return list
@@ -32,6 +51,7 @@ schedule: "${options.schedule}"
 severity_threshold: ${options.severityThreshold} # low | medium | high | critical
 
 # Which Nanocoder provider and model to use. Local-first by default.
+# The endpoint and API key for this provider live in agents.config.json.
 model:
   provider: ${options.provider}
   model: ${options.model}
@@ -41,6 +61,41 @@ issues:
   label: ${options.label}
   aggregate_to_config_repo: false
 `;
+}
+
+/**
+ * The runner the audit runs on, chosen by the provider rather than fixed.
+ *
+ * A local provider is a daemon on the machine: `ubuntu-latest` does not have
+ * one, so scaffolding a hosted runner alongside `provider: ollama` produces a
+ * workflow that cannot work. Self-hosted is also the posture the docs call
+ * first-class for local models, since the audited code never leaves hardware
+ * you own.
+ */
+function runnerFor(options: InitOptions): string {
+	if (!isLocalProvider(options.provider)) {
+		return `    runs-on: ubuntu-latest`;
+	}
+	return `    # ${options.provider} runs on the machine the job runs on, so this needs a
+    # self-hosted runner with that provider reachable. Switch to ubuntu-latest
+    # only alongside a cloud provider in agents.config.json.
+    runs-on: self-hosted`;
+}
+
+/**
+ * The model credential, for a cloud provider. The same name goes into
+ * `agents.config.json` as a `${...}` placeholder, which is what actually
+ * reaches Nanocoder — both are generated from `options.endpointSecret` so they
+ * agree by construction.
+ */
+function modelSecretEnv(options: InitOptions): string {
+	if (isLocalProvider(options.provider)) {
+		return '';
+	}
+	return `
+          # The model endpoint key. agents.config.json references this name as
+          # \${${options.endpointSecret}}; add it as an Actions secret.
+          ${options.endpointSecret}: \${{ secrets.${options.endpointSecret} }}`;
 }
 
 /** The scheduled GitHub Actions audit workflow. */
@@ -69,7 +124,7 @@ permissions:
 
 jobs:
   audit:
-    runs-on: ubuntu-latest
+${runnerFor(options)}
     steps:
       - name: Check out configuration
         uses: actions/checkout@v4
@@ -79,14 +134,22 @@ jobs:
         with:
           node-version: "22"
 
+      # Sentinel drives Nanocoder; it does not bundle it. Without this step the
+      # run fails on its first model call with "nanocoder is not on PATH".
+      - name: Install Nanocoder
+        run: npm install -g ${NANOCODER_PACKAGE}
+
       - name: Run Sentinel
         env:
           # A token that can read the audited repos and open issues on them.
           # The default GITHUB_TOKEN only reaches THIS repository, so to audit
           # other repos add a PAT (or GitHub App token) as the SENTINEL_TOKEN
           # secret with repo + issues scope.
+          #
+          # Sentinel does not pass this to Nanocoder — the model subprocess gets
+          # an allowlisted environment, and issues are filed afterwards.
           GH_TOKEN: \${{ secrets.SENTINEL_TOKEN || secrets.GITHUB_TOKEN }}
-          GITHUB_TOKEN: \${{ secrets.SENTINEL_TOKEN || secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: \${{ secrets.SENTINEL_TOKEN || secrets.GITHUB_TOKEN }}${modelSecretEnv(options)}
         run: >-
           npx -y @nanocollective/sentinel@latest run
           --workspace "$RUNNER_TEMP/sentinel"
@@ -158,17 +221,41 @@ it with rules that describe the code your organisation actually ships.
  * config repo — the same shape ContentForest uses. Local providers (Ollama,
  * LM Studio) are usually auto-detected and need no entry here; the example
  * below is a cloud provider to edit or delete.
+ *
+ * `disabledTools` is the part not to delete. The audit runs Nanocoder in
+ * auto-approve mode over a repository the operator did not write, with that
+ * repository's files in the prompt. Reading code and reporting on it needs no
+ * shell, no network fetch, no writes and no sub-agents, so an audit that keeps
+ * them is holding capability it never uses. This matches the posture the
+ * collective's own review workflow runs under.
  */
-export function nanocoderConfig(): string {
+export function nanocoderConfig(options: InitOptions): string {
 	return `${JSON.stringify(
 		{
 			nanocoder: {
+				disabledTools: [
+					// Executes, reaches the network, or spawns more agents.
+					'execute_bash',
+					'fetch_url',
+					'web_search',
+					'agent',
+					// Writes to the checkout, or pushes from it.
+					'file_op',
+					'write_file',
+					'string_replace',
+					'diff_edit',
+					'git_add',
+					'git_commit',
+					'git_pr',
+					// Blocks forever on a non-interactive run.
+					'ask_user',
+				],
 				providers: [
 					{
 						name: 'Example cloud provider — edit or remove',
 						sdkProvider: 'anthropic',
 						baseUrl: 'https://api.example.com/anthropic/v1',
-						apiKey: '${SENTINEL_MODEL_KEY}',
+						apiKey: `\${${options.endpointSecret}}`,
 						models: ['example-model'],
 					},
 				],
@@ -205,6 +292,22 @@ Sentinel ships **no rule packs** — it does nothing until you write one.
 to Nanocoder — the same shape ContentForest uses. Local providers (Ollama, LM
 Studio) are usually auto-detected and need no entry; for a cloud provider, edit
 the example block and set its key as an environment variable / Actions secret.
+
+${
+	isLocalProvider(options.provider)
+		? `This install is scaffolded for **${options.provider}**, a local provider, so
+the workflow runs on a \`self-hosted\` runner — that is where the daemon lives,
+and the audited code never leaves it. To move to a GitHub-hosted runner, swap
+in a cloud provider in \`agents.config.json\` and change \`runs-on\`.`
+		: `This install is scaffolded for a cloud provider. Add your endpoint key as
+an Actions secret named \`${options.endpointSecret}\` — \`agents.config.json\`
+references it as \`\${${options.endpointSecret}}\` and the workflow passes it
+through under that name.`
+}
+
+The audit runs Nanocoder with writes, shell and network access switched off in
+\`agents.config.json\`. It reads code and reports; keeping those tools would be
+holding capability the audit never uses over code you did not write.
 
 ## Layout
 
