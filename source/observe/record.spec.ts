@@ -3,7 +3,8 @@ import type {ReconcileResult} from '../dedup/reconcile.js';
 import type {Finding} from '../findings/types.js';
 import type {RunReport} from '../run/run.js';
 import type {PackOutcome, RepoOutcome} from '../run/types.js';
-import {buildRunRecord, recordFilename} from './record.js';
+import {buildRunRecord, isReadableRecord, recordFilename} from './record.js';
+import {RUN_RECORD_SCHEMA_VERSION, type RunRecord} from './types.js';
 
 console.log('\nobserve/record.spec.ts');
 
@@ -332,4 +333,29 @@ test('a repo with no full passes writes no key', t => {
 		'audit-only',
 	);
 	t.is(built.repos[0]?.fullPasses, undefined);
+});
+
+test('a new record is stamped with the current schema version', t => {
+	const record = buildRunRecord(report(), TS, 'live');
+	t.is(record.schemaVersion, RUN_RECORD_SCHEMA_VERSION);
+});
+
+test('records from this version and older are readable', t => {
+	// Absent means the pre-versioning shape, which differs only by fields that
+	// were already optional — so it stays readable rather than being discarded.
+	t.true(isReadableRecord({schemaVersion: undefined} as RunRecord));
+	t.true(isReadableRecord({schemaVersion: 0} as RunRecord));
+	t.true(
+		isReadableRecord({schemaVersion: RUN_RECORD_SCHEMA_VERSION} as RunRecord),
+	);
+});
+
+test('a record from a future schema is not readable', t => {
+	// Skipped rather than parsed hopefully: a dashboard rendered from a shape
+	// this build does not understand is wrong without looking wrong.
+	t.false(
+		isReadableRecord({
+			schemaVersion: RUN_RECORD_SCHEMA_VERSION + 1,
+		} as RunRecord),
+	);
 });

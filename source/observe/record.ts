@@ -15,6 +15,7 @@ import type {
 	RunUsage,
 	SeverityCounts,
 } from './types.js';
+import {RUN_RECORD_SCHEMA_VERSION} from './types.js';
 
 function emptyCounts(): SeverityCounts {
 	return {low: 0, medium: 0, high: 0, critical: 0};
@@ -86,6 +87,7 @@ export function buildRunRecord(
 	}
 
 	const record: RunRecord = {
+		schemaVersion: RUN_RECORD_SCHEMA_VERSION,
 		timestamp,
 		mode,
 		repos,
@@ -142,4 +144,22 @@ export function buildRunRecord(
 /** A filesystem-safe filename for a run record from its timestamp. */
 export function recordFilename(timestamp: string): string {
 	return `${timestamp.replace(/[:.]/g, '-')}.json`;
+}
+
+/**
+ * Whether this build can read a committed record.
+ *
+ * Records outlive the version that wrote them in both directions: an older
+ * Sentinel can meet a record a newer one committed, on any config repo where
+ * the workflow pins a version while a colleague ran a newer CLI locally. A
+ * record from a future schema is skipped rather than parsed hopefully — the
+ * same call the incremental cache makes, and for the same reason. Rendering a
+ * shape you do not understand produces a dashboard that is wrong without
+ * looking wrong.
+ *
+ * Absent means version 0, the shape written before this field existed. Those
+ * are readable: every difference from version 1 is an added optional field.
+ */
+export function isReadableRecord(record: RunRecord): boolean {
+	return (record.schemaVersion ?? 0) <= RUN_RECORD_SCHEMA_VERSION;
 }

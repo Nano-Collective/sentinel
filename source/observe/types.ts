@@ -76,8 +76,29 @@ export interface FilingSummary {
 	held?: number;
 }
 
+/**
+ * The shape `buildRunRecord` writes today. Bump it when a change to
+ * `RunRecord` is one a reader cannot absorb by treating a new field as
+ * optional — a field that changed meaning, or one whose absence can no longer
+ * be told from its default.
+ */
+export const RUN_RECORD_SCHEMA_VERSION = 1;
+
 /** A committed record of one Sentinel run. */
 export interface RunRecord {
+	/**
+	 * Which shape this record is.
+	 *
+	 * Records are append-only and the dashboard reads every one ever written
+	 * back, so the corpus is permanently mixed. Until now a reader told the
+	 * shapes apart by which keys happened to exist — workable while every
+	 * change was an added optional field, and unworkable the first time one is
+	 * not.
+	 *
+	 * Optional because every record committed before this field existed lacks
+	 * it. Absent means version 0: the pre-versioning shape, not an unknown one.
+	 */
+	schemaVersion?: number;
 	/** ISO timestamp of the run. */
 	timestamp: string;
 	mode: RunMode;
