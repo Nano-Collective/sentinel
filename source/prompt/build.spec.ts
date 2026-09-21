@@ -126,3 +126,17 @@ test('notes when no files match the scope', t => {
 		result.prompt.includes("No files matched this pack's applies_to scope"),
 	);
 });
+
+test('the output contract bounds what comes before the array, not just after', t => {
+	// A model that narrated its way through the files and then emitted the
+	// fence was following the old contract exactly — until the output ceiling
+	// cut it off mid-sentence, and a well-done audit came back as malformed.
+	const {prompt} = buildAuditPrompt({
+		pack: pack(),
+		files: [{path: 'programs/a.rs', content: 'fn main() {}'}],
+		repoName: 'org/repo',
+	});
+	t.true(prompt.includes('Write nothing after that line.'));
+	t.true(prompt.includes('Write nothing before the fence either.'));
+	t.true(prompt.includes('Do not narrate the analysis'));
+});
