@@ -55,6 +55,15 @@ function reportingContract(packName: string, category: string): string {
 		'- Put the JSON array inside a ```json fenced code block.',
 		'- On the line after the closing fence, output exactly: <<<SENTINEL_END>>>',
 		'- Write nothing after that line.',
+		// The contract used to bound only the tail. A model that narrated its
+		// way through the files for thousands of tokens and then emitted the
+		// fence was following it exactly — right up until the output ceiling
+		// cut it off mid-sentence, at which point the run reported malformed
+		// output for an audit that had actually been done well.
+		'- Write nothing before the fence either. Do not narrate the analysis,',
+		'  restate the rules, or describe what you are about to check. Examine',
+		'  the files, then open the fence: the array is the whole answer, and',
+		'  everything that is not in it is spent budget.',
 		'',
 		'Files below are shown with `N| ` line-number prefixes; use them for line_range.',
 		'Do not include the prefix in offending_snippet.',
