@@ -45,6 +45,16 @@ export interface Finding {
 	/** The relevant code excerpt. */
 	offendingSnippet: string;
 	/**
+	 * The pack that produced this finding, stamped by Sentinel after validation.
+	 *
+	 * Deliberately **not** read from the model's output — the validator builds
+	 * this object field by field from a fixed list, so a model cannot set it.
+	 * `rule` carries a pack prefix too, but that is the model's transcription of
+	 * the pack name rather than the pack that actually ran, and dedup keys on
+	 * this. Same distinction `withScopeMarkers` already draws for scope.
+	 */
+	pack?: string;
+	/**
 	 * The human-facing layer the issue body renders. These are model-authored
 	 * (they cannot be derived from the machine fields) and optional: a finding
 	 * still validates without them, but a good pack produces them.

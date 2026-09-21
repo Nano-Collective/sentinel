@@ -52,10 +52,18 @@ export async function auditPack(
 	// discarded over a severity we already know the right answer to.
 	const {findings, overrides} = applySeverityWeighting(result.findings, pack);
 
+	// Stamp the pack that actually ran. Dedup identity is built from this and
+	// the file, so it must come from here rather than from the `rule` prefix
+	// the model wrote — see dedup/hash.ts.
+	const attributed = findings.map(finding => ({
+		...finding,
+		pack: pack.manifest.name,
+	}));
+
 	return {
 		pack: pack.manifest.name,
 		version: pack.manifest.version,
-		findings,
+		findings: attributed,
 		severityOverrides: overrides,
 		attempts: result.attempts,
 		ok: result.ok,

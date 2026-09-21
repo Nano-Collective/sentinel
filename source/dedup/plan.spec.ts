@@ -261,3 +261,59 @@ test('holding survives repeated runs — the acceptance property', t => {
 
 	t.is(readMisses(issue.body), 0, 'the miss counter never moved');
 });
+
+/** A finding as `auditPack` stamps it: attributed to the pack that ran. */
+function attributed(file: string, pack: string, rule: string): Finding {
+	return {...finding(file), pack, rule};
+}
+
+test('a finding recurs when the model renames its rule between runs', t => {
+	// The production regression, at the planning layer. Run 1 filed
+	// `sql/string-concat`; run 2 reported `sql/string-concatenation` for the
+	// same line of the same file. The finding must match its issue, not refile.
+	const run1 = attributed('src/db.ts', 'sql', 'sql/string-concat');
+	const run2 = attributed('src/db.ts', 'sql', 'sql/string-concatenation');
+	const plan = planReconciliation([run2], [markedIssueFor(run1, 'sql')]);
+	t.is(plan.toCreate.length, 0, 'refiled a duplicate');
+	t.is(plan.toTouch.length, 1);
+	t.is(plan.toIncrementMiss.length, 0, 'aged an issue that had recurred');
+});
+
+test('two packs finding something in the same file stay separate issues', t => {
+	// Dropping `rule` from the identity collapses findings within a pack, which
+	// is the accepted trade. It must not collapse findings across packs.
+	const a = attributed('src/db.ts', 'sql', 'sql/x');
+	const b = attributed('src/db.ts', 'secrets', 'secrets/y');
+	const plan = planReconciliation([a, b], []);
+	t.is(plan.toCreate.length, 2);
+});
+
+test('an issue filed before the identity changed still matches', t => {
+	// Upgrade path. An issue carrying a hash this version would never compute
+	// is still matched through the `pack` and `path` markers it also carries,
+	// so upgrading does not read as every issue disappearing at once.
+	const current = attributed('src/db.ts', 'sql', 'sql/whatever');
+	const legacy = markedIssueFor(current, 'sql');
+	const withOldHash = {
+		...legacy,
+		body: upsertMarker(legacy.body, 'hash', 'deadbeefdeadbeef'),
+	};
+	const plan = planReconciliation([current], [withOldHash]);
+	t.is(plan.toCreate.length, 0);
+	t.is(plan.toTouch.length, 1);
+	t.is(plan.toIncrementMiss.length, 0);
+});
+
+test('an issue reachable under two identities ages only once', t => {
+	// Indexing an issue under both its stored hash and its recomputed identity
+	// must not make it two issues. Ageing it twice would drive it to the
+	// resolve threshold in half the runs.
+	const gone = attributed('src/db.ts', 'sql', 'sql/x');
+	const legacy = markedIssueFor(gone, 'sql');
+	const withOldHash = {
+		...legacy,
+		body: upsertMarker(legacy.body, 'hash', 'deadbeefdeadbeef'),
+	};
+	const plan = planReconciliation([], [withOldHash]);
+	t.is(plan.toIncrementMiss.length, 1, 'aged the same issue more than once');
+});

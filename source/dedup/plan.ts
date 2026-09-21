@@ -73,6 +73,30 @@ function hasSuppressionLabel(issue: ExistingIssue): boolean {
 }
 
 /**
+ * Every key an existing issue can be matched on: the hash it was filed with,
+ * and the identity its own markers imply under the current scheme. An issue
+ * filed by this version produces the same value twice; one filed by an older
+ * version produces two different ones, and matching on either is correct.
+ */
+function identityKeysOf(issue: ExistingIssue): string[] {
+	const keys = new Set<string>();
+	const stored = readMarker(issue.body, 'hash');
+	if (stored !== null) {
+		keys.add(stored);
+	}
+	const path = readMarker(issue.body, 'path');
+	if (path !== null) {
+		keys.add(
+			findingHash({
+				pack: readMarker(issue.body, 'pack') ?? undefined,
+				file: path,
+			}),
+		);
+	}
+	return [...keys];
+}
+
+/**
  * Plan the reconciliation of this run's findings against existing issues.
  */
 export function planReconciliation(
@@ -91,18 +115,35 @@ export function planReconciliation(
 		}
 	}
 
-	// Index existing issues by their embedded hash.
+	// Index existing issues by their embedded hash, and also by the identity
+	// recomputed from their own `pack` and `path` markers.
+	//
+	// The second key is what keeps an upgrade from looking like a mass refile.
+	// An issue filed before the hash stopped including model-authored prose
+	// carries a hash this version would never compute — but it carries the
+	// markers the current identity is built from, so it can still be matched.
+	// Both keys point at the same issue; whichever the run produces, it lands.
 	const suppressedHashes = new Set<string>();
 	const openByHash = new Map<string, ExistingIssue>();
+	// The open issues themselves, each once. An issue can be reachable under
+	// two keys, so ageing must walk this rather than the lookup map — iterating
+	// the map would age a two-key issue twice in a single run, which is the
+	// very failure this change exists to stop.
+	const openIssues: ExistingIssue[] = [];
 	for (const issue of existing) {
-		const hash = readMarker(issue.body, 'hash');
-		if (hash === null) {
+		const keys = identityKeysOf(issue);
+		if (keys.length === 0) {
 			continue;
 		}
 		if (hasSuppressionLabel(issue)) {
-			suppressedHashes.add(hash);
+			for (const key of keys) {
+				suppressedHashes.add(key);
+			}
 		} else if (issue.state === 'open') {
-			openByHash.set(hash, issue);
+			for (const key of keys) {
+				openByHash.set(key, issue);
+			}
+			openIssues.push(issue);
 		}
 	}
 
@@ -130,8 +171,9 @@ export function planReconciliation(
 
 	// Open issues whose finding did not recur this run: age them out — but only
 	// where "did not recur" is something this run is in a position to claim.
-	for (const [hash, issue] of openByHash) {
-		if (findingByHash.has(hash)) {
+	for (const issue of openIssues) {
+		// Recurred under any of its identities, so it is still live.
+		if (identityKeysOf(issue).some(key => findingByHash.has(key))) {
 			continue;
 		}
 		if (

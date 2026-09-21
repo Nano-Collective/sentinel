@@ -52,13 +52,20 @@ Every issue is labelled with your configured [label](../configuration/index.md#i
 
 ## Dedup
 
-Sentinel must never file the same issue twice. Dedup is enforced by a **content hash** over the fields that stay stable when a finding is re-audited:
+Sentinel must never file the same issue twice. Dedup is enforced by a **content hash**, and the test a field has to pass to be in it is not "does this describe the finding well" but **"will this be identical on the next run"**. Two fields pass:
 
-- the rule (which encodes the rule pack and finding type),
-- the file,
-- the category.
+- the **rule pack** that produced the finding, as Sentinel recorded it;
+- the **file**.
 
-The **line range is deliberately excluded** from the hash. LLMs report slightly different spans for the same issue between runs (e.g. lines 4–6 one day, 5–5 the next), so hashing it would break dedup and refile duplicates. The line range still appears in the issue body — it just isn't part of the finding's identity. The trade-off is that two distinct findings of the same rule in the same file collapse to a single issue, which is the cleaner outcome for a maintainer than several near-identical ones.
+Everything else is excluded, and the reason is the same for all of it: a model does not repeat itself exactly.
+
+- The **line range** wobbles — lines 4–6 one day, 5–5 the next.
+- The **rule** is worse. The prompt asks the model to name the pattern that fired (`<pack>/<pattern>`), and it invents that suffix per run: three audits of one unchanged file produced `sql/string-concat`, `sql/string-concatenation` and `sql/string-concat-user-input`.
+- The **category** is model-authored too, and drifts the same way.
+
+The pack is the anchor precisely because it is **not** model-authored. It is stamped after validation from the pack that actually ran — not read back out of the rule prefix, which is only the model's transcription of it.
+
+All of these still appear in the issue body; they are simply not the finding's identity. The trade-off is that two distinct findings from one pack in one file collapse into a single issue, which is the cleaner outcome for a maintainer than several near-identical ones — and a far better failure than the alternative, which is a duplicate filed every morning while the original is aged towards being closed as fixed.
 
 A later run that produces the same finding **updates the existing issue's last-seen timestamp** instead of opening a duplicate. A finding that stops appearing across N consecutive runs is marked resolved automatically.
 
