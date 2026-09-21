@@ -41,6 +41,14 @@ jobs:
       - name: Check out configuration
         # pin: actions/checkout@v4.4.0
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          # The commit below goes to a default branch the org's rulesets
+          # protect, and GITHUB_TOKEN does not bypass them — the first run
+          # pushed and was refused with "Changes must be made through a pull
+          # request". PAT_TOKEN is how the badge cron already does this.
+          # Falls back to GITHUB_TOKEN, which is correct for an install whose
+          # config repo is unprotected.
+          token: ${{ secrets.PAT_TOKEN || github.token }}
 
       - name: Set up Node.js
         # pin: actions/setup-node@v4.4.0
