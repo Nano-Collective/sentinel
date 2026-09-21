@@ -28,7 +28,11 @@ export function isLocalProvider(provider: string): boolean {
  * The Nanocoder release the scaffolded workflow installs. Pinned to a major
  * so a scaffolded install picks up fixes without waking up to a new major.
  */
-const NANOCODER_PACKAGE = '@nanocollective/nanocoder@1';
+// Pinned to the minor that added `--prompt-file`. Sentinel sends the prompt
+// through a file because Linux refuses to spawn a process with a single
+// argument over 128 KiB; an older Nanocoder does not reject the flag, it folds
+// it into the prompt, so the floor has to be enforced here.
+const NANOCODER_PACKAGE = '@nanocollective/nanocoder@^1.31.0';
 
 function targetsBlock(targets: string[]): string {
 	const list = targets.length > 0 ? targets : ['your-org/your-repo'];
