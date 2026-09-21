@@ -211,3 +211,62 @@ test('a non-boolean incremental is rejected', t => {
 	t.false(result.valid);
 	t.true(result.errors.some(error => error.field === 'targets[0].incremental'));
 });
+
+test('a provider name the model runner would reject is a config error', t => {
+	// Nanocoder validates --provider and exits before doing anything, so this
+	// is otherwise discovered one request per pack per repository into a
+	// scheduled run. "MiniMax Coding" is the realistic case: it is what the
+	// provider calls itself, and what an operator naturally writes.
+	const result = parseConfig(`
+targets:
+  - repo: a/b
+    rule_packs: [x]
+schedule: "0 6 * * *"
+model:
+  provider: "MiniMax Coding"
+  model: minimax-m3
+`);
+	t.false(result.valid);
+	t.true(
+		result.errors.some(
+			error =>
+				error.field === 'model.provider' &&
+				error.message.includes('model runner accepts'),
+		),
+		JSON.stringify(result.errors),
+	);
+});
+
+test('a fallback provider name is held to the same shape', t => {
+	const result = parseConfig(`
+targets:
+  - repo: a/b
+    rule_packs: [x]
+schedule: "0 6 * * *"
+model:
+  provider: ollama
+  model: m
+  fallback:
+    provider: "My Cloud"
+    model: gpt-x
+`);
+	t.false(result.valid);
+	t.true(
+		result.errors.some(error => error.field === 'model.fallback.provider'),
+	);
+});
+
+test('ordinary provider names still parse', t => {
+	for (const provider of ['ollama', 'minimax-coding', 'my_provider', 'gpt4o']) {
+		const result = parseConfig(`
+targets:
+  - repo: a/b
+    rule_packs: [x]
+schedule: "0 6 * * *"
+model:
+  provider: ${provider}
+  model: m
+`);
+		t.true(result.valid, `${provider} should be accepted`);
+	}
+});

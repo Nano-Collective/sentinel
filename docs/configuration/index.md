@@ -101,7 +101,7 @@ Which Nanocoder provider to use. **Local-first is the intended posture**: `ollam
 
 | Key | Description |
 | --- | --- |
-| `provider` | The provider to run against. Passed to Nanocoder as `--provider`, so it must name one Nanocoder knows — a built-in, or an entry in your `agents.config.json`. |
+| `provider` | The provider to run against. Passed to Nanocoder as `--provider`, so it must name one Nanocoder knows — a built-in, or an entry in your `agents.config.json` — and must be spelled with **letters, digits, hyphens and underscores only**. Nanocoder rejects anything else outright, so `sentinel.yaml` refuses it at load rather than at the first model call. Name the entry in `agents.config.json` to match: `minimax-coding`, not `MiniMax Coding`. |
 | `model` | The model id, which must be one that provider offers. |
 | `fallback` | Optional `provider` + `model` used only when the primary struggles. Switching to it switches both. |
 

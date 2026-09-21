@@ -57,7 +57,18 @@ export function parseInitArgs(argv: string[]): ParsedInitArgs {
 
 	const provider = asString(flags.get('provider'));
 	if (provider) {
-		options.provider = provider;
+		// The scaffolder writes this name into two files that have to agree —
+		// sentinel.yaml's `model.provider` and the entry in agents.config.json —
+		// and it is passed to the model runner as `--provider`, which rejects
+		// anything outside this shape outright. Better to refuse the scaffold
+		// than to write a config pair that cannot run.
+		if (/^[a-zA-Z0-9_-]+$/.test(provider)) {
+			options.provider = provider;
+		} else {
+			errors.push(
+				`provider "${provider}" is not a name the model runner accepts — use only letters, digits, hyphens and underscores`,
+			);
+		}
 	}
 	const model = asString(flags.get('model'));
 	if (model) {

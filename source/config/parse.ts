@@ -125,6 +125,35 @@ function validateTarget(
 	return target;
 }
 
+/**
+ * Provider names the model runner will accept.
+ *
+ * Nanocoder validates `--provider` against this exact shape and exits before
+ * doing anything, so a name with a space in it — `"MiniMax Coding"` is the
+ * obvious one, since that is what the provider calls itself — turns every pack
+ * into a failed audit. The name also has to match an entry in
+ * `agents.config.json`, so the two files can only agree on a value both will
+ * accept.
+ *
+ * Caught here rather than at the model call: config is validated once at
+ * startup, and the alternative is discovering it one request per pack per
+ * repository into a scheduled run.
+ */
+const PROVIDER_NAME = /^[a-zA-Z0-9_-]+$/;
+
+function checkProviderName(
+	name: string,
+	field: string,
+	errors: ConfigError[],
+): void {
+	if (!PROVIDER_NAME.test(name)) {
+		errors.push({
+			field,
+			message: `${field} "${name}" is not a name the model runner accepts — use only letters, digits, hyphens and underscores, and give the provider that name in agents.config.json too`,
+		});
+	}
+}
+
 function validateModel(
 	value: unknown,
 	errors: ConfigError[],
@@ -137,7 +166,9 @@ function validateModel(
 		return null;
 	}
 
-	if (!isNonEmptyString(value.provider)) {
+	if (isNonEmptyString(value.provider)) {
+		checkProviderName(value.provider, 'model.provider', errors);
+	} else {
 		errors.push({
 			field: 'model.provider',
 			message: 'model.provider is required',
@@ -166,6 +197,7 @@ function validateModel(
 					message: 'model.fallback requires provider and model',
 				});
 			} else {
+				checkProviderName(fb.provider, 'model.fallback.provider', errors);
 				model.fallback = {provider: fb.provider, model: fb.model};
 			}
 		}
