@@ -38,7 +38,7 @@ jobs:
       # Sentinel drives Nanocoder; it does not bundle it. Without this step the
       # run fails on its first model call with "nanocoder is not on PATH".
       - name: Install Nanocoder
-        run: npm install -g @nanocollective/nanocoder@1
+        run: npm install -g @nanocollective/nanocoder@^1.31.0
 
       - name: Run Sentinel
         env:

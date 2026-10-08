@@ -9,7 +9,10 @@
  * findings array can be extracted, rather than inheriting stdio.
  */
 
-import {spawnSync} from 'node:child_process';
+import {type SpawnSyncReturns, spawnSync} from 'node:child_process';
+import {mkdtempSync, rmSync, writeFileSync} from 'node:fs';
+import {tmpdir} from 'node:os';
+import {dirname, join} from 'node:path';
 import type {ModelConfig} from '../config/types.js';
 import {modelEnvNames, passthroughNames, scopeEnv} from './env.js';
 import type {ModelRunner, ModelRunResult, RunnerOptions} from './types.js';
@@ -46,14 +49,22 @@ export function resolveProvider(
  * Build the Nanocoder argv for a run. Pure and tested; the spawn itself is not.
  */
 export function buildNanocoderArgs(
-	prompt: string,
+	promptFile: string,
 	model: ModelConfig,
 	options: RunnerOptions = {},
 ): string[] {
 	const useFallback = options.useFallback ?? false;
 	return [
 		'run',
-		prompt,
+		// The prompt goes through a file, never argv. Linux caps a single
+		// argument at MAX_ARG_STRLEN (32 pages = 131072 bytes) regardless of the
+		// far larger ARG_MAX total, and execve fails with E2BIG before the
+		// process starts. A prompt carries every file the pack matched, so this
+		// is reached by any repository of ordinary size — 314 KiB for one of
+		// Sentinel's own packs. macOS has no equivalent per-argument cap, which
+		// is what let it go unnoticed: it works locally and cannot spawn in CI.
+		'--prompt-file',
+		promptFile,
 		'--mode',
 		'yolo',
 		// `model.provider` was configured, validated and then never sent, so
@@ -135,24 +146,72 @@ export function buildNanocoderEnv(
 }
 
 /* c8 ignore start -- spawns a real process; not exercised in unit tests. */
+/**
+ * Whether the installed Nanocoder understands `--prompt-file`.
+ *
+ * Detected from `--help` rather than compared against a version, because a
+ * capability is the thing actually depended on and `--help` is Nanocoder's
+ * deliberate fast path — it prints static text and exits before loading the
+ * app. Probed once per process.
+ *
+ * Without this the failure is silent in the worst way: an older Nanocoder does
+ * not reject an unknown flag, it folds it into the prompt. The model is then
+ * asked to audit the literal text `--prompt-file /tmp/…`, answers something
+ * unusable, and the run reports malformed output with no hint of why.
+ */
+let promptFileSupport: boolean | undefined;
+
+function supportsPromptFile(): boolean {
+	if (promptFileSupport === undefined) {
+		const help = spawnSync('nanocoder', ['--help'], {
+			encoding: 'utf8',
+			timeout: 30_000,
+		});
+		promptFileSupport = (help.stdout ?? '').includes('--prompt-file');
+	}
+	return promptFileSupport;
+}
+
 export const nanocoderRunner: ModelRunner = {
 	async run(
 		prompt: string,
 		model: ModelConfig,
 		options: RunnerOptions = {},
 	): Promise<ModelRunResult> {
-		const result = spawnSync(
-			'nanocoder',
-			buildNanocoderArgs(prompt, model, options),
-			{
-				cwd: options.cwd,
-				encoding: 'utf8',
-				stdio: ['ignore', 'pipe', 'pipe'],
-				timeout: options.timeoutMs ?? DEFAULT_TIMEOUT_MS,
-				env: buildNanocoderEnv(process.env, options.configDir),
-				maxBuffer: 64 * 1024 * 1024,
-			},
+		if (!supportsPromptFile()) {
+			return {
+				ok: false,
+				output: '',
+				error:
+					'the installed nanocoder does not support --prompt-file. Sentinel sends the prompt through a file because Linux refuses to spawn a process with an argument over 128 KiB, which any repository of ordinary size exceeds. Upgrade it: npm install -g @nanocollective/nanocoder@latest',
+			};
+		}
+
+		// Written next to nothing else and removed on the way out. The prompt
+		// contains the audited repository's source, so it does not belong in the
+		// cwd of the repo being audited, nor anywhere it could outlive the run.
+		const promptFile = join(
+			mkdtempSync(join(tmpdir(), 'sentinel-prompt-')),
+			'prompt.txt',
 		);
+		let result: SpawnSyncReturns<string>;
+		try {
+			writeFileSync(promptFile, prompt, 'utf8');
+			result = spawnSync(
+				'nanocoder',
+				buildNanocoderArgs(promptFile, model, options),
+				{
+					cwd: options.cwd,
+					encoding: 'utf8',
+					stdio: ['ignore', 'pipe', 'pipe'],
+					timeout: options.timeoutMs ?? DEFAULT_TIMEOUT_MS,
+					env: buildNanocoderEnv(process.env, options.configDir),
+					maxBuffer: 64 * 1024 * 1024,
+				},
+			);
+		} finally {
+			rmSync(dirname(promptFile), {recursive: true, force: true});
+		}
 
 		if (result.error) {
 			const code = (result.error as NodeJS.ErrnoException).code;
@@ -162,6 +221,13 @@ export const nanocoderRunner: ModelRunner = {
 					output: '',
 					error:
 						'`nanocoder` is not on PATH. Install it (npm i -g @nanocollective/nanocoder).',
+				};
+			}
+			if (code === 'E2BIG') {
+				return {
+					ok: false,
+					output: '',
+					error: `the argument list was too long to spawn nanocoder (${Math.round(prompt.length / 1024)} KiB prompt). Sentinel passes the prompt through a file, so this means the installed nanocoder is too old to support --prompt-file — upgrade it (npm install -g @nanocollective/nanocoder@latest).`,
 				};
 			}
 			if (code === 'ETIMEDOUT') {
