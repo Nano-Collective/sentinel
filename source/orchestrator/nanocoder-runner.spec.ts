@@ -32,10 +32,11 @@ test('resolveModelId falls back to primary when no fallback configured', t => {
 });
 
 test('buildNanocoderArgs mirrors the collective invocation with --json', t => {
-	const args = buildNanocoderArgs('the prompt', MODEL);
+	const args = buildNanocoderArgs('/tmp/prompt.txt', MODEL);
 	t.deepEqual(args, [
 		'run',
-		'the prompt',
+		'--prompt-file',
+		'/tmp/prompt.txt',
 		'--mode',
 		'yolo',
 		'--provider',
@@ -50,12 +51,15 @@ test('buildNanocoderArgs mirrors the collective invocation with --json', t => {
 test('buildNanocoderArgs sends the configured provider', t => {
 	// model.provider was validated and then never passed, so the run used
 	// whichever provider Nanocoder chose for itself.
-	const args = buildNanocoderArgs('p', {provider: 'lmstudio', model: 'qwen'});
+	const args = buildNanocoderArgs('/tmp/p.txt', {
+		provider: 'lmstudio',
+		model: 'qwen',
+	});
 	t.is(args[args.indexOf('--provider') + 1], 'lmstudio');
 });
 
 test('buildNanocoderArgs switches provider and model together on fallback', t => {
-	const args = buildNanocoderArgs('p', MODEL, {useFallback: true});
+	const args = buildNanocoderArgs('/tmp/p.txt', MODEL, {useFallback: true});
 	t.is(args[args.indexOf('--model') + 1], 'gpt-x');
 	t.is(args[args.indexOf('--provider') + 1], 'openai');
 });
@@ -132,4 +136,20 @@ test('parseNanocoderReport falls back to raw text when stdout is not the report'
 	const result = parseNanocoderReport('just some text [1,2]');
 	t.true(result.ok);
 	t.is(result.output, 'just some text [1,2]');
+});
+
+test('the prompt never travels through argv', t => {
+	// Linux caps a single argument at 131072 bytes and execve fails with E2BIG
+	// before the process starts. A prompt carries every file the pack matched,
+	// so a repository of ordinary size exceeds it — one of Sentinel's own packs
+	// builds a 314 KiB prompt. macOS has no such cap, which is exactly why this
+	// reached production: it passes locally and cannot spawn in CI.
+	const huge = 'x'.repeat(200_000);
+	const args = buildNanocoderArgs(huge, MODEL);
+	// The only large value here is the path we were handed, never a prompt.
+	t.is(args.indexOf('--prompt-file') + 1, args.indexOf(huge));
+	t.false(
+		args.some(arg => arg.length > 1000 && arg !== huge),
+		'an oversized argument other than the file path',
+	);
 });

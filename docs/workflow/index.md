@@ -70,6 +70,8 @@ Sentinel *drives* Nanocoder; it does not bundle it, and `npx @nanocollective/sen
 
 If you assembled your workflow by hand and skipped this, the run fails on its first model call with `nanocoder is not on PATH`.
 
+**Nanocoder 1.31 or newer is required.** Sentinel hands the prompt to Nanocoder through a file rather than the command line, because Linux refuses to spawn a process with a single argument over 128 KiB — and a prompt carries every file the pack matched, so any repository of ordinary size is past that. An older Nanocoder does not reject the `--prompt-file` flag; it folds it into the prompt, so Sentinel checks for the capability and says so rather than letting the model answer a question made of command-line flags.
+
 ### `agents.config.json` must define your provider
 
 Sentinel points Nanocoder at your config repo via `NANOCODER_CONFIG_DIR`, which **replaces** Nanocoder's provider list rather than adding to it. A local provider that Nanocoder auto-detects when you run it by hand is *not* found here — it has to be in the file. `init` writes the entry for whichever provider you chose, and `model.provider` in `sentinel.yaml` is matched against the `name` in that entry, so keep the two in step if you edit either.
