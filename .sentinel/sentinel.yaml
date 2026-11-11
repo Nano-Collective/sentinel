@@ -33,7 +33,7 @@ severity_threshold: high
 # itself ("MiniMax Coding") is not available here.
 model:
   provider: minimax-coding
-  model: minimax-m3
+  model: MiniMax-M3.1-Flash
 
 issues:
   label: sentinel
