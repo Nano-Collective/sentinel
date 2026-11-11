@@ -14,7 +14,9 @@
 			"!node_modules",
 			"!.husky",
 			"!template",
-			"!.changeset/pre.json"
+			"!.changeset/pre.json",
+			"!.sentinel/runs",
+			"!.sentinel/cache.json"
 		]
 	},
 	"formatter": {
