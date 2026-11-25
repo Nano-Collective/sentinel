@@ -2,7 +2,9 @@
 "@nanocollective/sentinel": patch
 ---
 
-- **Dedup no longer keys on prose the model writes.** `findingHash` hashed
+- **Dedup no longer keys on prose the model writes.** *(This fix shipped in
+  0.1.0-alpha.7; it merged seconds before that release was cut, so its entry
+  missed that release's notes.)* `findingHash` hashed
   `rule`, `file` and `category`. Its own comment explained that `line_range`
   was excluded because models report slightly different spans for the same
   issue between runs — correct, and equally true of `rule` and `category`,
