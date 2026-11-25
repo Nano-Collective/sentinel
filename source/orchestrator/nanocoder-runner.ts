@@ -161,12 +161,18 @@ export function buildNanocoderEnv(
  */
 let promptFileSupport: boolean | undefined;
 
-function supportsPromptFile(): boolean {
+/**
+ * Undefined when the probe could not run Nanocoder at all. That is not an
+ * answer about `--prompt-file`: the spawn below reports it as the documented
+ * "not on PATH" error, and the next call probes again once it is installed.
+ */
+function supportsPromptFile(): boolean | undefined {
 	if (promptFileSupport === undefined) {
 		const help = spawnSync('nanocoder', ['--help'], {
 			encoding: 'utf8',
 			timeout: 30_000,
 		});
+		if (help.error) return undefined;
 		promptFileSupport = (help.stdout ?? '').includes('--prompt-file');
 	}
 	return promptFileSupport;
@@ -178,7 +184,7 @@ export const nanocoderRunner: ModelRunner = {
 		model: ModelConfig,
 		options: RunnerOptions = {},
 	): Promise<ModelRunResult> {
-		if (!supportsPromptFile()) {
+		if (supportsPromptFile() === false) {
 			return {
 				ok: false,
 				output: '',
