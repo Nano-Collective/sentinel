@@ -1,0 +1,48 @@
+{
+  "schemaVersion": 1,
+  "timestamp": "2026-11-27T12:16:48.480Z",
+  "mode": "dry-run",
+  "repos": [
+    {
+      "repo": "Nano-Collective/sentinel",
+      "findings": 0,
+      "bySeverity": {
+        "low": 0,
+        "medium": 0,
+        "high": 0,
+        "critical": 0
+      },
+      "packs": [
+        {
+          "pack": "silent-failure",
+          "version": "1.0.0",
+          "findings": 0,
+          "ok": false
+        },
+        {
+          "pack": "untrusted-content",
+          "version": "1.0.0",
+          "findings": 0,
+          "ok": false
+        }
+      ]
+    }
+  ],
+  "totals": {
+    "repos": 1,
+    "findings": 0,
+    "bySeverity": {
+      "low": 0,
+      "medium": 0,
+      "high": 0,
+      "critical": 0
+    },
+    "usage": {
+      "requests": 2,
+      "durationMs": 15418,
+      "promptTokens": 138541,
+      "outputTokens": 0
+    }
+  },
+  "targetErrors": []
+}
