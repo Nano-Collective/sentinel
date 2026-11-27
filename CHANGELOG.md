@@ -1,3 +1,58 @@
+## 0.1.0-alpha.8
+
+### Patch Changes
+
+- **Dedup no longer keys on prose the model writes.** *(This fix shipped in
+  0.1.0-alpha.7; it merged seconds before that release was cut, so its entry
+  missed that release's notes.)* `findingHash` hashed
+  `rule`, `file` and `category`. Its own comment explained that `line_range`
+  was excluded because models report slightly different spans for the same
+  issue between runs — correct, and equally true of `rule` and `category`,
+  which the prompt asks the model to author. The rule suffix worst of all: it
+  is invented per run.
+
+  Three live audits of one unchanged file produced `sql/string-concat`,
+  `sql/string-concatenation` and `sql/string-concat-user-input`. Each hashed
+  differently, so the finding was **refiled as a duplicate and the original
+  aged a miss towards being auto-resolved as fixed** — a fresh duplicate every
+  morning on a daily schedule, and a real vulnerability closed within the week.
+  It survived because the file → match → age → resolve lifecycle had only ever
+  run against fakes, where the rule is whatever the fixture says.
+
+  Identity is now the **pack** and the **file**. `pack` is stamped by Sentinel
+  after validation and cannot be set by a model — the same distinction
+  `withScopeMarkers` already drew when it took the pack from the filing context
+  rather than the rule prefix. Two findings from one pack in one file now
+  collapse into one issue, which `docs/findings/index.md#dedup` already argues
+  is the better outcome.
+
+  Issues filed before this change carry a hash that would never be recomputed,
+  but they carry the `pack` and `path` markers the new identity is built from,
+  so they are matched on either key and upgrading does not read as every issue
+  disappearing at once.
+- **The prompt no longer travels through argv, so audits work on Linux.** The
+  entire prompt — pack body plus every matched file — was passed as one
+  command-line argument. Linux caps a *single* argv entry at `MAX_ARG_STRLEN`
+  (32 pages, 131072 bytes) independently of the much larger `ARG_MAX`, and
+  `execve` fails with `E2BIG` before the process starts.
+
+  128 KiB is about 3000 lines, so a pack scoped `src/**/*.ts` exceeds it on
+  most real projects — and every production install runs on Linux. Sentinel
+  therefore could not audit a repository of ordinary size in the environment it
+  ships for, and never had: the first scheduled run to get far enough to try
+  returned `spawnSync nanocoder E2BIG` for both packs, at 314 KiB and 218 KiB.
+  macOS has no equivalent per-argument cap, which is precisely why every local
+  exercise passed.
+
+  The prompt goes through a temporary file now, written outside the audited
+  repository and removed on the way out. This needs **Nanocoder 1.31 or newer**;
+  the scaffolded workflow pins it, and Sentinel probes for the capability
+  before spawning, because an older Nanocoder does not reject the unknown flag
+  — it folds it into the prompt and the model is left answering a question made
+  of command-line flags.
+
+  `E2BIG` is also handled explicitly now. It should be unreachable, but an
+  errno is not an explanation.
 ## 0.1.0-alpha.7
 
 ### Patch Changes
